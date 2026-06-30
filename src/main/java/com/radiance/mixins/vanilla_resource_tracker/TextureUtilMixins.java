@@ -2,7 +2,7 @@ package com.radiance.mixins.vanilla_resource_tracker;
 
 import com.mojang.blaze3d.platform.TextureUtil;
 import com.radiance.client.texture.TextureTracker;
-import net.minecraft.client.texture.NativeImage;
+import com.mojang.blaze3d.platform.NativeImage;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -12,7 +12,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class TextureUtilMixins {
 
     @Inject(method = "prepareImage(Lnet/minecraft/client/texture/NativeImage$InternalFormat;IIII)V", at = @At("HEAD"))
-    private static void profileTexture(NativeImage.InternalFormat internalFormat,
+    private static void profileTexture(NativeImage.Format internalFormat,
         int id,
         int maxLevel,
         int width,

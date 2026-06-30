@@ -3,8 +3,8 @@ package com.radiance.mixins.vanilla_resource_tracker;
 import com.radiance.client.texture.IdentifierInputStream;
 import com.radiance.mixin_related.extensions.vanilla_resource_tracker.INativeImageExt;
 import java.io.InputStream;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.util.Identifier;
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.resources.Identifier;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -29,9 +29,9 @@ public abstract class NativeImageMixins implements INativeImageExt {
     @Unique
     private NativeImage flagImage = null;
 
-    @Inject(method = "read(Lnet/minecraft/client/texture/NativeImage$Format;Ljava/io/InputStream;)"
+    @Inject(method = "read(Lcom/mojang/blaze3d/platform/NativeImage$Format;Ljava/io/InputStream;)"
         +
-        "Lnet/minecraft/client/texture/NativeImage;", at = @At(value = "RETURN"), cancellable = true)
+        "Lcom/mojang/blaze3d/platform/NativeImage;", at = @At(value = "RETURN"), cancellable = true)
     private static void readIdentifier(NativeImage.Format format, InputStream stream,
         CallbackInfoReturnable<NativeImage> cir) {
         NativeImage nativeImage = cir.getReturnValue();

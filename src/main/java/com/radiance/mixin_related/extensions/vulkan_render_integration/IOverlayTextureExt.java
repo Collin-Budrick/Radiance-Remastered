@@ -1,8 +1,8 @@
 package com.radiance.mixin_related.extensions.vulkan_render_integration;
 
-import net.minecraft.client.texture.AbstractTexture;
+import com.mojang.blaze3d.textures.GpuTextureView;
 
 public interface IOverlayTextureExt {
 
-    AbstractTexture radiance$getTexture();
+    GpuTextureView radiance$getTextureView();
 }

@@ -6,10 +6,10 @@ import com.radiance.mixin_related.extensions.vanilla_resource_tracker.IRenderabl
 import java.nio.IntBuffer;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import net.minecraft.client.font.BakedGlyph;
-import net.minecraft.client.font.RenderableGlyph;
-import net.minecraft.client.font.UnihexFont;
-import net.minecraft.client.texture.NativeImage;
+import net.minecraft.client.gui.font.glyphs.BakedGlyph;
+import com.mojang.blaze3d.font.SheetGlyphInfo;
+import net.minecraft.client.gui.font.providers.UnihexProvider;
+import com.mojang.blaze3d.platform.NativeImage;
 import org.lwjgl.system.MemoryUtil;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -17,12 +17,12 @@ import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 
-@Mixin(UnihexFont.UnicodeTextureGlyph.class)
+@Mixin(UnihexProvider.UnicodeTextureGlyph.class)
 public abstract class UnicodeTextureGlyphMixins {
 
     @Final
     @Shadow
-    public UnihexFont.BitmapGlyph contents;
+    public UnihexProvider.BitmapGlyph contents;
 
     @Final
     @Shadow
@@ -76,7 +76,7 @@ public abstract class UnicodeTextureGlyphMixins {
      * @reason to pass image targetID
      */
     @Overwrite
-    public BakedGlyph bake(Function<RenderableGlyph, BakedGlyph> function) {
+    public BakedGlyph bake(Function<SheetGlyphInfo, BakedGlyph> function) {
         return function.apply(new IRenderableGlyphExt() {
             public float getOversample() {
                 return 2.0F;
@@ -97,7 +97,7 @@ public abstract class UnicodeTextureGlyphMixins {
             @Override
             public void upload(int id, int u, int v) {
                 IntBuffer intBuffer = MemoryUtil.memAllocInt(width() * 16);
-                UnihexFont.addGlyphPixels(intBuffer, contents, left, right);
+                UnihexProvider.addGlyphPixels(intBuffer, contents, left, right);
                 intBuffer.rewind();
 
                 if (id < 0) {

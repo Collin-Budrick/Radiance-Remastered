@@ -6,17 +6,16 @@ import static com.radiance.client.option.Options.DENOISER_MODE_SVGF;
 import static com.radiance.client.option.Options.DENOISER_MODE_TEMPORAL;
 
 import com.mojang.serialization.Codec;
-import net.minecraft.util.StringIdentifiable;
-import net.minecraft.util.TranslatableOption;
+import net.minecraft.util.StringRepresentable;
 
-public enum DenoiserMode implements TranslatableOption, StringIdentifiable {
+public enum DenoiserMode implements StringRepresentable {
     DLSS(0, "dlss", DENOISER_MODE_DLSS),
     SVGF(1, "svgf", DENOISER_MODE_SVGF),
     NRD(2, "nrd", DENOISER_MODE_NRD),
     TEMPORAL(3, "temporal", DENOISER_MODE_TEMPORAL);
 
     public static final Codec<DenoiserMode> Codec =
-        StringIdentifiable.createCodec(DenoiserMode::values);
+        StringRepresentable.fromValues(DenoiserMode::values);
     private final int ordinal;
     private final String name;
     private final String translationKey;
@@ -28,16 +27,14 @@ public enum DenoiserMode implements TranslatableOption, StringIdentifiable {
     }
 
     @Override
-    public String asString() {
+    public String getSerializedName() {
         return this.name;
     }
 
-    @Override
     public int getId() {
         return this.ordinal;
     }
 
-    @Override
     public String getTranslationKey() {
         return this.translationKey;
     }

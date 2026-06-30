@@ -9,12 +9,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
-import net.minecraft.client.gl.CompiledShader;
-import net.minecraft.client.gl.GlUniform;
-import net.minecraft.client.gl.ShaderLoader;
-import net.minecraft.client.gl.ShaderProgram;
-import net.minecraft.client.gl.ShaderProgramDefinition;
-import net.minecraft.client.render.VertexFormat;
+import com.mojang.blaze3d.shaders.CompiledShader;
+import com.mojang.blaze3d.opengl.Uniform;
+import net.minecraft.client.renderer.ShaderManager;
+import net.minecraft.client.renderer.CompiledShaderProgram;
+import net.minecraft.client.renderer.ShaderProgramConfig;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -24,17 +24,17 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin(ShaderProgram.class)
+@Mixin(CompiledShaderProgram.class)
 public abstract class ShaderProgramMixins implements IShaderProgramExt {
 
     @Unique
     private static final AtomicInteger NEXT_VIRTUAL_PROGRAM_ID = new AtomicInteger(1);
     @Unique
-    private static final Constructor<ShaderProgram> CONSTRUCTOR = createConstructor();
+    private static final Constructor<CompiledShaderProgram> CONSTRUCTOR = createConstructor();
 
     @Shadow
     @Final
-    private List<ShaderProgramDefinition.Sampler> samplers;
+    private List<ShaderProgramConfig.Sampler> samplers;
 
     @Shadow
     @Final
@@ -46,63 +46,63 @@ public abstract class ShaderProgramMixins implements IShaderProgramExt {
 
     @Shadow
     @Final
-    private List<GlUniform> uniforms;
+    private List<Uniform> uniforms;
 
     @Shadow
     @Final
-    private Map<String, GlUniform> uniformsByName;
+    private Map<String, Uniform> uniformsByName;
 
     @Shadow
     @Final
-    private Map<String, ShaderProgramDefinition.Uniform> uniformDefinitionsByName;
+    private Map<String, ShaderProgramConfig.Uniform> uniformDefinitionsByName;
 
     @Shadow
-    public GlUniform modelViewMat;
+    public Uniform modelViewMat;
 
     @Shadow
-    public GlUniform projectionMat;
+    public Uniform projectionMat;
 
     @Shadow
-    public GlUniform textureMat;
+    public Uniform textureMat;
 
     @Shadow
-    public GlUniform screenSize;
+    public Uniform screenSize;
 
     @Shadow
-    public GlUniform colorModulator;
+    public Uniform colorModulator;
 
     @Shadow
-    public GlUniform light0Direction;
+    public Uniform light0Direction;
 
     @Shadow
-    public GlUniform light1Direction;
+    public Uniform light1Direction;
 
     @Shadow
-    public GlUniform glintAlpha;
+    public Uniform glintAlpha;
 
     @Shadow
-    public GlUniform fogStart;
+    public Uniform fogStart;
 
     @Shadow
-    public GlUniform fogEnd;
+    public Uniform fogEnd;
 
     @Shadow
-    public GlUniform fogColor;
+    public Uniform fogColor;
 
     @Shadow
-    public GlUniform fogShape;
+    public Uniform fogShape;
 
     @Shadow
-    public GlUniform lineWidth;
+    public Uniform lineWidth;
 
     @Shadow
-    public GlUniform gameTime;
+    public Uniform gameTime;
 
     @Shadow
-    public GlUniform modelOffset;
+    public Uniform modelOffset;
 
     @Shadow
-    private GlUniform createGlUniform(ShaderProgramDefinition.Uniform uniform) {
+    private Uniform createGlUniform(ShaderProgramConfig.Uniform uniform) {
         throw new AssertionError();
     }
 
@@ -120,9 +120,9 @@ public abstract class ShaderProgramMixins implements IShaderProgramExt {
     @Inject(method = "create", at = @At("HEAD"), cancellable = true)
     private static void createWithoutOpenGL(CompiledShader vertexShader,
         CompiledShader fragmentShader, VertexFormat format,
-        CallbackInfoReturnable<ShaderProgram> cir) throws ShaderLoader.LoadException {
+        CallbackInfoReturnable<CompiledShaderProgram> cir) throws ShaderManager.LoadException {
         try {
-            ShaderProgram shaderProgram = CONSTRUCTOR.newInstance(
+            CompiledShaderProgram shaderProgram = CONSTRUCTOR.newInstance(
                 NEXT_VIRTUAL_PROGRAM_ID.getAndIncrement());
             IShaderProgramExt ext = (IShaderProgramExt) (Object) shaderProgram;
             ext.radiance$setVertexFormat(format);
@@ -132,13 +132,13 @@ public abstract class ShaderProgramMixins implements IShaderProgramExt {
                 ((ICompiledShaderExt) (Object) fragmentShader).radiance$getResolvedSource());
             cir.setReturnValue(shaderProgram);
         } catch (ReflectiveOperationException e) {
-            throw new ShaderLoader.LoadException("Could not create virtual shader program");
+            throw new ShaderManager.LoadException("Could not create virtual shader program");
         }
     }
 
     @Inject(method = "set", at = @At("HEAD"), cancellable = true)
-    private void setWithoutOpenGL(List<ShaderProgramDefinition.Uniform> uniforms,
-        List<ShaderProgramDefinition.Sampler> samplers, CallbackInfo ci) {
+    private void setWithoutOpenGL(List<ShaderProgramConfig.Uniform> uniforms,
+        List<ShaderProgramConfig.Sampler> samplers, CallbackInfo ci) {
         this.uniforms.clear();
         this.uniformsByName.clear();
         this.uniformDefinitionsByName.clear();
@@ -146,8 +146,8 @@ public abstract class ShaderProgramMixins implements IShaderProgramExt {
         this.samplerLocations.clear();
         this.samplerTextures.clear();
 
-        for (ShaderProgramDefinition.Uniform uniform : uniforms) {
-            GlUniform glUniform = this.createGlUniform(uniform);
+        for (ShaderProgramConfig.Uniform uniform : uniforms) {
+            Uniform glUniform = this.createGlUniform(uniform);
             glUniform.setLocation(this.uniforms.size());
             this.uniforms.add(glUniform);
             this.uniformsByName.put(uniform.name(), glUniform);
@@ -156,7 +156,7 @@ public abstract class ShaderProgramMixins implements IShaderProgramExt {
 
         ArrayList<String> samplerNames = new ArrayList<>(samplers.size());
         for (int i = 0; i < samplers.size(); i++) {
-            ShaderProgramDefinition.Sampler sampler = samplers.get(i);
+            ShaderProgramConfig.Sampler sampler = samplers.get(i);
             this.samplers.add(sampler);
             this.samplerLocations.add(i);
             samplerNames.add(sampler.name());
@@ -194,7 +194,7 @@ public abstract class ShaderProgramMixins implements IShaderProgramExt {
 
     @Inject(method = "close", at = @At("HEAD"), cancellable = true)
     private void closeWithoutOpenGL(CallbackInfo ci) {
-        this.uniforms.forEach(GlUniform::close);
+        this.uniforms.forEach(Uniform::close);
         ci.cancel();
     }
 
@@ -244,7 +244,7 @@ public abstract class ShaderProgramMixins implements IShaderProgramExt {
     }
 
     @Override
-    public List<GlUniform> radiance$getUniformsValue() {
+    public List<Uniform> radiance$getUniformsValue() {
         return this.uniforms;
     }
 
@@ -254,14 +254,14 @@ public abstract class ShaderProgramMixins implements IShaderProgramExt {
     }
 
     @Unique
-    private static Constructor<ShaderProgram> createConstructor() {
+    private static Constructor<CompiledShaderProgram> createConstructor() {
         try {
-            Constructor<ShaderProgram> constructor = ShaderProgram.class.getDeclaredConstructor(
+            Constructor<CompiledShaderProgram> constructor = CompiledShaderProgram.class.getDeclaredConstructor(
                 int.class);
             constructor.setAccessible(true);
             return constructor;
         } catch (ReflectiveOperationException e) {
-            throw new RuntimeException("Failed to access ShaderProgram constructor", e);
+            throw new RuntimeException("Failed to access CompiledShaderProgram constructor", e);
         }
     }
 }

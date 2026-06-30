@@ -2,13 +2,13 @@ package com.radiance.mixins.vanilla_resource_tracker;
 
 import com.radiance.mixin_related.extensions.vanilla_resource_tracker.ISpriteContentsExt;
 import com.radiance.mixin_related.extensions.vanilla_resource_tracker.ISpriteExt;
-import net.minecraft.client.texture.Sprite;
-import net.minecraft.client.texture.SpriteContents;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.renderer.texture.SpriteContents;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 
-@Mixin(Sprite.class)
+@Mixin(TextureAtlasSprite.class)
 public abstract class SpriteMixins implements ISpriteExt {
 
     @Final

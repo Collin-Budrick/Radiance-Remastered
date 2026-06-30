@@ -1,0 +1,52 @@
+package com.radiance.mixins.vulkan_render_integration;
+
+import com.mojang.blaze3d.platform.NativeImage;
+import com.mojang.blaze3d.systems.CommandEncoder;
+import com.mojang.blaze3d.textures.GpuTexture;
+import com.radiance.client.RendererAvailability;
+import com.radiance.client.proxy.vulkan.TextureProxy;
+import com.radiance.client.texture.AuxiliaryTextures;
+import com.radiance.client.texture.TextureTracker;
+import com.radiance.client.texture.TextureUploadReplay;
+import com.radiance.mixin_related.extensions.vulkan_render_integration.INativeImageExt;
+import net.minecraft.resources.Identifier;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(CommandEncoder.class)
+public class CommandEncoderTextureMixins {
+
+    @Inject(method = "writeToTexture(Lcom/mojang/blaze3d/textures/GpuTexture;Lcom/mojang/blaze3d/platform/NativeImage;IIII)V",
+        at = @At("HEAD"))
+    private void mirrorNativeImageUpload(GpuTexture texture, NativeImage image, int mipLevel,
+        int dstX, int dstY, int unused, CallbackInfo ci) {
+        com.radiance.mixin_related.extensions.vanilla_resource_tracker.INativeImageExt imageExt =
+            (com.radiance.mixin_related.extensions.vanilla_resource_tracker.INativeImageExt) (Object) image;
+        Identifier identifier = imageExt.radiance$getIdentifier();
+        TextureTracker.rememberTextureIdentifier(identifier, texture);
+
+        if (!RendererAvailability.isRendererLifecycleActive()
+            || !TextureTracker.shouldMirrorTextures()) {
+            TextureUploadReplay.capture(texture, identifier, image, mipLevel, dstX, dstY);
+            return;
+        }
+
+        TextureTracker.registerTextureIdentifier(identifier, texture);
+
+        int targetId = TextureTracker.shouldAllowSmallTexture(identifier, texture)
+            ? TextureTracker.getOrRegisterGuiTexture(texture)
+            : TextureTracker.getOrRegisterGpuTexture(texture);
+        if (targetId == 0) {
+            return;
+        }
+
+        AuxiliaryTextures.loadAndUpload(image, texture, mipLevel, dstX, dstY);
+
+        long pointer = ((INativeImageExt) (Object) image).radiance$getPointer();
+        int srcSizeInBytes = image.getWidth() * image.getHeight() * image.format().components();
+        TextureProxy.queueUpload(pointer, srcSizeInBytes, image.getWidth(), targetId, 0, 0, dstX,
+            dstY, image.getWidth(), image.getHeight(), mipLevel);
+    }
+}

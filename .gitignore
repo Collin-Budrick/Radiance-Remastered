@@ -124,6 +124,8 @@ core.lib
 libnvidia-ngx-dlss*
 include/
 shaders/
+!src/main/resources/shaders/
+!src/main/resources/shaders/**
 libxess*
 # CocoIndex Code (ccc)
 /.cocoindex_code/

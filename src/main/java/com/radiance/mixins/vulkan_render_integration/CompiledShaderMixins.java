@@ -3,9 +3,9 @@ package com.radiance.mixins.vulkan_render_integration;
 import com.radiance.mixin_related.extensions.vulkan_render_integration.ICompiledShaderExt;
 import java.lang.reflect.Constructor;
 import java.util.concurrent.atomic.AtomicInteger;
-import net.minecraft.client.gl.CompiledShader;
-import net.minecraft.client.gl.ShaderLoader;
-import net.minecraft.util.Identifier;
+import com.mojang.blaze3d.shaders.CompiledShader;
+import net.minecraft.client.renderer.ShaderManager;
+import net.minecraft.resources.Identifier;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -30,7 +30,7 @@ public abstract class CompiledShaderMixins implements ICompiledShaderExt {
 
     @Inject(method = "compile", at = @At("HEAD"), cancellable = true)
     private static void compileWithoutOpenGL(Identifier id, CompiledShader.Type type, String source,
-        CallbackInfoReturnable<CompiledShader> cir) throws ShaderLoader.LoadException {
+        CallbackInfoReturnable<CompiledShader> cir) throws ShaderManager.LoadException {
         try {
             CompiledShader shader = CONSTRUCTOR.newInstance(NEXT_VIRTUAL_SHADER_ID.getAndIncrement(),
                 id);
@@ -38,7 +38,7 @@ public abstract class CompiledShaderMixins implements ICompiledShaderExt {
             ext.radiance$setResolvedSource(source);
             cir.setReturnValue(shader);
         } catch (ReflectiveOperationException e) {
-            throw new ShaderLoader.LoadException(
+            throw new ShaderManager.LoadException(
                 "Failed to create virtual compiled shader: " + id);
         }
     }

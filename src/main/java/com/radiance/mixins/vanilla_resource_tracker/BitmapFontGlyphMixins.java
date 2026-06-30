@@ -3,16 +3,16 @@ package com.radiance.mixins.vanilla_resource_tracker;
 import com.radiance.mixin_related.extensions.vanilla_resource_tracker.INativeImageExt;
 import com.radiance.mixin_related.extensions.vanilla_resource_tracker.IRenderableGlyphExt;
 import java.util.function.Function;
-import net.minecraft.client.font.BakedGlyph;
-import net.minecraft.client.font.BitmapFont;
-import net.minecraft.client.font.RenderableGlyph;
-import net.minecraft.client.texture.NativeImage;
+import net.minecraft.client.gui.font.glyphs.BakedGlyph;
+import net.minecraft.client.gui.font.providers.BitmapProvider;
+import com.mojang.blaze3d.font.SheetGlyphInfo;
+import com.mojang.blaze3d.platform.NativeImage;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
 
-@Mixin(BitmapFont.BitmapFontGlyph.class)
+@Mixin(BitmapProvider.BitmapFontGlyph.class)
 public abstract class BitmapFontGlyphMixins {
 
     @Shadow
@@ -48,7 +48,7 @@ public abstract class BitmapFontGlyphMixins {
      * @reason to pass image targetID
      */
     @Overwrite
-    public BakedGlyph bake(Function<RenderableGlyph, BakedGlyph> function) {
+    public BakedGlyph bake(Function<SheetGlyphInfo, BakedGlyph> function) {
         return function.apply(new IRenderableGlyphExt() {
             @Override
             public float getOversample() {

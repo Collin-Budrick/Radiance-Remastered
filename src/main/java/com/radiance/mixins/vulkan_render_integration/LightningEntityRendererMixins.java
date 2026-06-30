@@ -1,14 +1,14 @@
 package com.radiance.mixins.vulkan_render_integration;
 
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.entity.LightningEntityRenderer;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.renderer.entity.LightningBoltRenderer;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(LightningEntityRenderer.class)
+@Mixin(LightningBoltRenderer.class)
 public class LightningEntityRendererMixins {
 
     @Inject(method = "drawBranch(Lorg/joml/Matrix4f;Lnet/minecraft/client/render/VertexConsumer;FFIFFFFFFFZZZZ)V",

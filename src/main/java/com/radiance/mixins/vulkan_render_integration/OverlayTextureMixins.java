@@ -1,22 +1,19 @@
 package com.radiance.mixins.vulkan_render_integration;
 
+import com.mojang.blaze3d.textures.GpuTextureView;
 import com.radiance.mixin_related.extensions.vulkan_render_integration.IOverlayTextureExt;
-import net.minecraft.client.render.OverlayTexture;
-import net.minecraft.client.texture.AbstractTexture;
-import net.minecraft.client.texture.NativeImageBackedTexture;
-import org.spongepowered.asm.mixin.Final;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 
 @Mixin(OverlayTexture.class)
-public class OverlayTextureMixins implements IOverlayTextureExt {
+public abstract class OverlayTextureMixins implements IOverlayTextureExt {
 
-    @Final
     @Shadow
-    private NativeImageBackedTexture texture;
+    public abstract GpuTextureView getTextureView();
 
     @Override
-    public AbstractTexture radiance$getTexture() {
-        return texture;
+    public GpuTextureView radiance$getTextureView() {
+        return this.getTextureView();
     }
 }

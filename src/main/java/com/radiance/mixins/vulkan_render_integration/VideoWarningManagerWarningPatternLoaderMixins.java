@@ -1,11 +1,11 @@
 package com.radiance.mixins.vulkan_render_integration;
 
-import net.minecraft.client.resource.VideoWarningManager;
+import net.minecraft.client.renderer.GpuWarnlistManager;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
-@Mixin(VideoWarningManager.WarningPatternLoader.class)
+@Mixin(GpuWarnlistManager.WarningPatternLoader.class)
 public class VideoWarningManagerWarningPatternLoaderMixins {
 
     @Redirect(method = "buildWarnings()Lcom/google/common/collect/ImmutableMap;",

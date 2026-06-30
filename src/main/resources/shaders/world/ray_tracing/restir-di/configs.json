@@ -1,0 +1,7 @@
+{
+  "radiance": {
+    "shader_pack": true,
+    "display_name": "ReSTIR DI"
+  },
+  "requires_emission": true
+}

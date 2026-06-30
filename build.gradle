@@ -1,7 +1,25 @@
 plugins {
-    id 'fabric-loom' version '1.11-SNAPSHOT'
+    id 'fabric-loom' version "${loom_version}"
     id 'maven-publish'
 }
+
+def isWindows = System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT).contains("windows")
+def nativeResourceNames = ["core.dll", "core.lib", "libcore.so", "libxess.dll", "libxess_dx11.dll", "libxess_fg.dll"]
+def mcvrSourceDir = providers.gradleProperty("radianceMcvrSourceDir")
+        .map { file(it) }
+        .orElse(layout.projectDirectory.dir("src/main/native/MCVR").asFile)
+def mcvrBuildDir = providers.gradleProperty("radianceMcvrBuildDir")
+        .map { file(it) }
+        .orElse(layout.buildDirectory.dir("mcvr").map { it.asFile })
+def nativeArtifactDirs = providers.gradleProperty("radianceNativeArtifactDirs")
+        .map { dirs -> dirs.split(java.util.regex.Pattern.quote(File.pathSeparator)).collect { file(it) } }
+        .orElse([
+                file("src/main/resources"),
+                file("src/main/native/artifacts/windows"),
+                file("src/main/native/artifacts"),
+                file("build/native/windows"),
+                file("build/native")
+        ])
 
 version = project.mod_version
 group = project.maven_group
@@ -15,12 +33,60 @@ compileJava {
     outputs.upToDateWhen { false }
 }
 
-loom {
-    accessWidenerPath = file("src/main/resources/radiance.accesswidener")
+sourceSets {
+    main {
+        java {
+            exclude 'com/radiance/mixins/vanilla_resource_tracker/AbstractTextureMixins.java'
+            exclude 'com/radiance/mixins/vanilla_resource_tracker/BitmapFontGlyphMixins.java'
+            exclude 'com/radiance/mixins/vanilla_resource_tracker/BuiltinEmptyGlyphMixins.java'
+            exclude 'com/radiance/mixins/vanilla_resource_tracker/FontStorageMixins.java'
+            exclude 'com/radiance/mixins/vanilla_resource_tracker/GlyphAtlasTextureMixins.java'
+            exclude 'com/radiance/mixins/vanilla_resource_tracker/NativeImageBackedTextureMixins.java'
+            exclude 'com/radiance/mixins/vanilla_resource_tracker/OverlayTextureMixins.java'
+            exclude 'com/radiance/mixins/vanilla_resource_tracker/ReloadableTextureMixins.java'
+            exclude 'com/radiance/mixins/vanilla_resource_tracker/SpriteAtlasTextureMixins.java'
+            exclude 'com/radiance/mixins/vanilla_resource_tracker/SpriteContentsMixins.java'
+            exclude 'com/radiance/mixins/vanilla_resource_tracker/SpriteMixins.java'
+            exclude 'com/radiance/mixins/vanilla_resource_tracker/TextureUtilMixins.java'
+            exclude 'com/radiance/mixins/vanilla_resource_tracker/TtfGlyphMixins.java'
+            exclude 'com/radiance/mixins/vanilla_resource_tracker/UnicodeTextureGlyphMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/BannerBlockEntityRendererMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/AbstractTextureMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/BlockColorsMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/BlockModelRendererMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/BufferRendererMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/CloudRendererMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/CompiledShaderMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/EntityRenderDispatcherMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/EntityRendererMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/FluidRendererMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/GlStateManagerMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/HeldItemRendererMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/ItemRendererMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/LightningEntityRendererMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/ParticleManagerMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/RenderLayerMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/RenderPhaseLightmapMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/RenderPhaseMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/RenderPhaseTargetMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/ShaderLoaderMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/ShaderProgramMixins.java'
+            exclude 'com/radiance/mixins/vulkan_render_integration/VideoWarningManagerWarningPatternLoaderMixins.java'
+            exclude 'com/radiance/client/UnsafeManager.java'
+            exclude 'com/radiance/mixin_related/extensions/vulkan_render_integration/IHeldItemRendererExt.java'
+        }
+    }
 }
 
 tasks.named("runClient", JavaExec) {
    args "--width", "1920", "--height", "1080"
+   def radianceQuickPlayWorld = System.getProperty("radiance.quickPlayWorld")
+   if (radianceQuickPlayWorld != null && !radianceQuickPlayWorld.isBlank()) {
+       args "--quickPlaySingleplayer", radianceQuickPlayWorld
+   }
+   if (System.getProperty("radiance.renderer.required") == "true") {
+       jvmArgs "-Dradiance.renderer.required=true"
+   }
 }
 
 repositories {
@@ -46,8 +112,6 @@ dependencies {
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-
     // https://mvnrepository.com/artifact/org.yaml/snakeyaml
     implementation "org.yaml:snakeyaml:2.5"
     include "org.yaml:snakeyaml:2.5"
@@ -64,6 +128,87 @@ processResources {
                 "minecraft_version": project.minecraft_version,
                 "loader_version": project.loader_version
     }
+}
+
+tasks.register("configureMcvrWindows", Exec) {
+    group = "radiance native"
+    description = "Configure the external MCVR native renderer for Windows. Set -PradianceMcvrSourceDir if it is not under src/main/native/MCVR."
+    dependsOn tasks.named("compileJava")
+
+    doFirst {
+        if (!isWindows) {
+            throw new GradleException("configureMcvrWindows is only supported on Windows.")
+        }
+        if (!new File(mcvrSourceDir.get(), "CMakeLists.txt").isFile()) {
+            throw new GradleException("MCVR source not found at ${mcvrSourceDir.get()}. Clone https://github.com/Minecraft-Radiance/MCVR there or pass -PradianceMcvrSourceDir=<path>.")
+        }
+    }
+
+    commandLine "cmake",
+            "-S", mcvrSourceDir.get().absolutePath,
+            "-B", mcvrBuildDir.get().absolutePath,
+            "-G", "Visual Studio 17 2022",
+            "-A", "x64",
+            "-DJAVA_PROJECT_ROOT_DIR=${projectDir.absolutePath}",
+            "-DMCVR_ENABLE_NRD=ON",
+            "-DUSE_AMD=ON"
+}
+
+tasks.register("buildMcvrWindows", Exec) {
+    group = "radiance native"
+    description = "Build MCVR's Windows core native renderer."
+    dependsOn tasks.named("configureMcvrWindows")
+
+    commandLine "cmake",
+            "--build", mcvrBuildDir.get().absolutePath,
+            "-j",
+            "--config", "Release"
+}
+
+tasks.register("installMcvrWindows", Exec) {
+    group = "radiance native"
+    description = "Install MCVR's Windows runtime artifacts into Radiance resource/package locations."
+    dependsOn tasks.named("buildMcvrWindows")
+    finalizedBy tasks.named("packageNativeResources")
+
+    commandLine "cmake",
+            "--install", mcvrBuildDir.get().absolutePath,
+            "--config", "Release"
+}
+
+tasks.register("verifyNativeResources") {
+    group = "radiance native"
+    description = "Verify required native renderer runtime artifacts are available for packaging."
+
+    doLast {
+        def found = nativeArtifactDirs.get()
+                .findAll { it.isDirectory() }
+                .collectMany { dir -> nativeResourceNames.collect { new File(dir, it) } }
+                .findAll { it.isFile() }
+        if (isWindows && !found.any { it.name == "core.dll" }) {
+            throw new GradleException("core.dll was not found for packaging. Run installMcvrWindows after cloning MCVR, or pass -PradianceNativeArtifactDirs=<dir${File.pathSeparator}dir> containing core.dll/core.lib.")
+        }
+    }
+}
+
+tasks.register("packageNativeResources", Sync) {
+    group = "radiance native"
+    description = "Stage native renderer runtime artifacts so they are packaged at the mod jar root."
+    dependsOn tasks.named("verifyNativeResources")
+
+    def outputDir = layout.buildDirectory.dir("generated/radianceNativeResources")
+    into outputDir
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    from({ nativeArtifactDirs.get().findAll { it.isDirectory() } }) {
+        include nativeResourceNames
+    }
+}
+
+tasks.named("processResources") {
+    dependsOn tasks.named("packageNativeResources")
+    from(tasks.named("packageNativeResources"))
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 def targetJavaVersion = 21

@@ -2,16 +2,17 @@ package com.radiance.client.texture;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
-import net.minecraft.resource.ResourceManager;
-import net.minecraft.resource.ResourceReloader;
+import net.minecraft.server.packs.resources.ResourceManager;
+import net.minecraft.server.packs.resources.PreparableReloadListener;
 
-public class AuxiliaryTextureReloader implements ResourceReloader {
+public class AuxiliaryTextureReloader implements PreparableReloadListener {
 
     @Override
-    public CompletableFuture<Void> reload(Synchronizer synchronizer, ResourceManager manager,
-        Executor prepareExecutor, Executor applyExecutor) {
+    public CompletableFuture<Void> reload(SharedState sharedState, Executor prepareExecutor,
+        PreparationBarrier preparationBarrier, Executor applyExecutor) {
+        ResourceManager manager = sharedState.resourceManager();
         return AuxiliaryTextures.prepareDecodedImagesAsync(manager, prepareExecutor)
-            .thenCompose(synchronizer::whenPrepared)
+            .thenCompose(preparationBarrier::wait)
             .thenAcceptAsync(AuxiliaryTextures::applyPreparedImages, applyExecutor);
     }
 }

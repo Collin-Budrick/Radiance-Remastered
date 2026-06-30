@@ -3,36 +3,34 @@ package com.radiance.mixins.vulkan_render_integration;
 import com.radiance.client.vertex.PBRVertexFormatElements;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
-import net.minecraft.client.render.BuiltBuffer;
-import net.minecraft.client.render.VertexFormat;
-import net.minecraft.client.render.VertexFormatElement;
-import org.joml.Vector3f;
+import com.mojang.blaze3d.vertex.CompactVectorArray;
+import com.mojang.blaze3d.vertex.MeshData;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(BuiltBuffer.class)
+@Mixin(MeshData.class)
 public class BuiltBufferMixins {
 
-    @Inject(method = "collectCentroids(Ljava/nio/ByteBuffer;ILnet/minecraft/client/render/VertexFormat;)[Lorg/joml/Vector3f;",
+    @Inject(method = "decodeQuadCentroids(Ljava/nio/ByteBuffer;ILcom/mojang/blaze3d/vertex/VertexFormat;Lcom/mojang/blaze3d/vertex/CompactVectorArray;I)V",
         at = @At(value = "HEAD"),
         cancellable = true)
     private static void addPBRPosition(ByteBuffer buf, int vertexCount, VertexFormat format,
-        CallbackInfoReturnable<Vector3f[]> cir) {
-        int i = format.getOffset(VertexFormatElement.POSITION);
-        if (i == -1) {
-            i = format.getOffset(PBRVertexFormatElements.PBR_POS);
+        CompactVectorArray output, int outputOffset, CallbackInfo ci) {
+        int i = 0;
+        if (format.getElement(PBRVertexFormatElements.PBR_POS.name()) != null) {
+            i = PBRVertexFormatElements.PBR_POS.offset() / 4;
         }
-        if (i == -1) {
+        if (format.getElement("Position") == null && format.getElement(PBRVertexFormatElements.PBR_POS.name()) == null) {
             throw new IllegalArgumentException(
                 "Cannot identify quad centers with no position element");
         } else {
             FloatBuffer floatBuffer = buf.asFloatBuffer();
-            int j = format.getVertexSizeByte() / 4;
+            int j = format.getVertexSize() / 4;
             int k = j * 4;
             int l = vertexCount / 4;
-            Vector3f[] vector3fs = new Vector3f[l];
 
             for (int m = 0; m < l; m++) {
                 int n = m * k + i;
@@ -43,10 +41,11 @@ public class BuiltBufferMixins {
                 float p = floatBuffer.get(o);
                 float q = floatBuffer.get(o + 1);
                 float r = floatBuffer.get(o + 2);
-                vector3fs[m] = new Vector3f((f + p) / 2.0F, (g + q) / 2.0F, (h + r) / 2.0F);
+                output.set(outputOffset + m, (f + p) / 2.0F, (g + q) / 2.0F,
+                    (h + r) / 2.0F);
             }
 
-            cir.setReturnValue(vector3fs);
+            ci.cancel();
         }
     }
 }

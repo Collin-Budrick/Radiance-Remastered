@@ -1,12 +1,29 @@
 package com.radiance.client.shader;
 
+import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_COLOR_LAYER;
+import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_COORDINATE;
+import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_GLINT_TEXTURE;
+import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_GLINT_UV;
+import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_LIGHT_UV;
+import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_NORM;
+import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_OVERLAY_UV;
+import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_POS;
+import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_TEXTURE_ID;
+import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_TEXTURE_UV;
+import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_USE_COLOR_LAYER;
+import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_USE_GLINT;
+import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_USE_LIGHT;
+import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_USE_NORM;
+import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_USE_OVERLAY;
+import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_USE_TEXTURE;
+
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import net.minecraft.client.render.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexFormat;
 
 public final class ShaderTranslator {
 
@@ -15,6 +32,23 @@ public final class ShaderTranslator {
         "^\\s*(?:layout\\s*\\([^)]*\\)\\s*)?uniform\\s+[\\w\\d_]+(?:\\s*\\[[^]]*])?\\s+(\\w+)\\s*;\\s*$");
     private static final Pattern INPUT_OUTPUT_PATTERN = Pattern.compile(
         "^\\s*(in|out)\\s+([\\w\\d_]+)\\s+(\\w+)\\s*;\\s*$");
+    private static final List<String> PBR_ATTRIBUTE_NAMES = List.of(
+        PBR_POS.name(),
+        PBR_USE_NORM.name(),
+        PBR_NORM.name(),
+        PBR_USE_COLOR_LAYER.name(),
+        PBR_COLOR_LAYER.name(),
+        PBR_USE_TEXTURE.name(),
+        PBR_USE_OVERLAY.name(),
+        PBR_TEXTURE_UV.name(),
+        PBR_OVERLAY_UV.name(),
+        PBR_USE_GLINT.name(),
+        PBR_TEXTURE_ID.name(),
+        PBR_GLINT_UV.name(),
+        PBR_GLINT_TEXTURE.name(),
+        PBR_USE_LIGHT.name(),
+        PBR_LIGHT_UV.name(),
+        PBR_COORDINATE.name());
 
     private ShaderTranslator() {
     }
@@ -31,7 +65,7 @@ public final class ShaderTranslator {
             .collect(java.util.stream.Collectors.toSet());
 
         LinkedHashMap<String, Integer> attributeLocations = new LinkedHashMap<>();
-        List<String> attributeNames = vertexFormat.getAttributeNames();
+        List<String> attributeNames = getAttributeNames(vertexFormat);
         for (int i = 0; i < attributeNames.size(); i++) {
             attributeLocations.put(attributeNames.get(i), i);
         }
@@ -49,6 +83,10 @@ public final class ShaderTranslator {
 
         String header = buildHeader(fields);
         return new Result(header + vertex.source(), header + fragment.source(), uniformBufferSize);
+    }
+
+    private static List<String> getAttributeNames(VertexFormat vertexFormat) {
+        return PBR_ATTRIBUTE_NAMES;
     }
 
     private static StageResult rewriteStage(String source, boolean vertexStage,

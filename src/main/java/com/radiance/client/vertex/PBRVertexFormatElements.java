@@ -1,96 +1,46 @@
 package com.radiance.client.vertex;
 
-import net.minecraft.client.render.VertexFormatElement;
+import com.mojang.blaze3d.GpuFormat;
 
 public class PBRVertexFormatElements {
 
-    public static final VertexFormatElement
-        PBR_POS =
-        VertexFormatElement.register(6, 0, VertexFormatElement.ComponentType.FLOAT,
-            VertexFormatElement.Usage.GENERIC, 3);
+    public record PBRAttribute(String name, int bit, int offset, GpuFormat format) {
+    }
 
-    public static final VertexFormatElement
-        PBR_USE_NORM =
-        VertexFormatElement.register(7, 0, VertexFormatElement.ComponentType.UINT,
-            VertexFormatElement.Usage.UV, 1);
-
-    public static final VertexFormatElement
-        PBR_NORM =
-        VertexFormatElement.register(8, 0, VertexFormatElement.ComponentType.FLOAT,
-            VertexFormatElement.Usage.GENERIC, 3);
-
-    public static final VertexFormatElement
-        PBR_USE_COLOR_LAYER =
-        VertexFormatElement.register(9, 0, VertexFormatElement.ComponentType.UINT,
-            VertexFormatElement.Usage.UV, 1);
-
-    public static final VertexFormatElement
-        PBR_COLOR_LAYER =
-        VertexFormatElement.register(10, 0, VertexFormatElement.ComponentType.FLOAT,
-            VertexFormatElement.Usage.GENERIC, 4);
-
-    public static final VertexFormatElement
-        PBR_USE_TEXTURE =
-        VertexFormatElement.register(11, 0, VertexFormatElement.ComponentType.UINT,
-            VertexFormatElement.Usage.UV, 1);
-
-    public static final VertexFormatElement
-        PBR_USE_OVERLAY =
-        VertexFormatElement.register(12, 0, VertexFormatElement.ComponentType.UINT,
-            VertexFormatElement.Usage.UV, 1);
-
-    public static final VertexFormatElement
-        PBR_TEXTURE_UV =
-        VertexFormatElement.register(13, 0, VertexFormatElement.ComponentType.FLOAT,
-            VertexFormatElement.Usage.GENERIC, 2);
-
-    public static final VertexFormatElement
-        PBR_OVERLAY_UV =
-        VertexFormatElement.register(14, 0, VertexFormatElement.ComponentType.INT,
-            VertexFormatElement.Usage.UV, 2);
-
-    public static final VertexFormatElement
-        PBR_USE_GLINT =
-        VertexFormatElement.register(15, 0, VertexFormatElement.ComponentType.UINT,
-            VertexFormatElement.Usage.UV, 1);
-
-    public static final VertexFormatElement
-        PBR_TEXTURE_ID =
-        VertexFormatElement.register(16, 0, VertexFormatElement.ComponentType.UINT,
-            VertexFormatElement.Usage.UV, 1);
-
-    public static final VertexFormatElement
-        PBR_GLINT_UV =
-        VertexFormatElement.register(17, 0, VertexFormatElement.ComponentType.FLOAT,
-            VertexFormatElement.Usage.GENERIC, 2);
-
-    public static final VertexFormatElement
-        PBR_GLINT_TEXTURE =
-        VertexFormatElement.register(18, 0, VertexFormatElement.ComponentType.UINT,
-            VertexFormatElement.Usage.UV, 1);
-
-    public static final VertexFormatElement
-        PBR_USE_LIGHT =
-        VertexFormatElement.register(19, 0, VertexFormatElement.ComponentType.UINT,
-            VertexFormatElement.Usage.UV, 1);
-
-    public static final VertexFormatElement
-        PBR_LIGHT_UV =
-        VertexFormatElement.register(20, 0, VertexFormatElement.ComponentType.INT,
-            VertexFormatElement.Usage.UV, 2);
-
-    public static final VertexFormatElement
-        PBR_COORDINATE =
-        VertexFormatElement.register(21, 0, VertexFormatElement.ComponentType.UINT,
-            VertexFormatElement.Usage.UV, 1);
-
-    public static final VertexFormatElement
-        PBR_POST_BASE =
-        VertexFormatElement.register(22, 0, VertexFormatElement.ComponentType.FLOAT,
-            VertexFormatElement.Usage.GENERIC, 3);
-
-    public static final VertexFormatElement
-        PBR_ALBEDO_EMISSION =
-        VertexFormatElement.register(23, 0, VertexFormatElement.ComponentType.UINT,
-            VertexFormatElement.Usage.UV, 1);
+    public static final PBRAttribute PBR_POS =
+        new PBRAttribute("Pos", 6, 0, GpuFormat.RGB32_FLOAT);
+    public static final PBRAttribute PBR_USE_NORM =
+        new PBRAttribute("UseNorm", 7, 12, GpuFormat.R32_UINT);
+    public static final PBRAttribute PBR_NORM =
+        new PBRAttribute("Norm", 8, 16, GpuFormat.RGB32_FLOAT);
+    public static final PBRAttribute PBR_USE_COLOR_LAYER =
+        new PBRAttribute("UseColorLayer", 9, 28, GpuFormat.R32_UINT);
+    public static final PBRAttribute PBR_COLOR_LAYER =
+        new PBRAttribute("ColorLayer", 10, 32, GpuFormat.RGBA32_FLOAT);
+    public static final PBRAttribute PBR_USE_TEXTURE =
+        new PBRAttribute("UseTexture", 11, 48, GpuFormat.R32_UINT);
+    public static final PBRAttribute PBR_USE_OVERLAY =
+        new PBRAttribute("UseOverlay", 12, 52, GpuFormat.R32_UINT);
+    public static final PBRAttribute PBR_TEXTURE_UV =
+        new PBRAttribute("TextureUV", 13, 56, GpuFormat.RG32_FLOAT);
+    public static final PBRAttribute PBR_OVERLAY_UV =
+        new PBRAttribute("OverlayUV", 14, 64, GpuFormat.RG32_SINT);
+    public static final PBRAttribute PBR_USE_GLINT =
+        new PBRAttribute("UseGlint", 15, 72, GpuFormat.R32_UINT);
+    public static final PBRAttribute PBR_TEXTURE_ID =
+        new PBRAttribute("TextureID", 16, 76, GpuFormat.R32_UINT);
+    public static final PBRAttribute PBR_GLINT_UV =
+        new PBRAttribute("GlintUV", 17, 80, GpuFormat.RG32_FLOAT);
+    public static final PBRAttribute PBR_GLINT_TEXTURE =
+        new PBRAttribute("GlintTexture", 18, 88, GpuFormat.R32_UINT);
+    public static final PBRAttribute PBR_USE_LIGHT =
+        new PBRAttribute("UseLight", 19, 92, GpuFormat.R32_UINT);
+    public static final PBRAttribute PBR_LIGHT_UV =
+        new PBRAttribute("LightUV", 20, 96, GpuFormat.RG32_SINT);
+    public static final PBRAttribute PBR_COORDINATE =
+        new PBRAttribute("Coordinate", 21, 104, GpuFormat.R32_UINT);
+    public static final PBRAttribute PBR_ALBEDO_EMISSION =
+        new PBRAttribute("AlbedoEmission", 23, 108, GpuFormat.R32_UINT);
+    public static final PBRAttribute PBR_POST_BASE =
+        new PBRAttribute("PostBase", 22, 112, GpuFormat.RGB32_FLOAT);
 }

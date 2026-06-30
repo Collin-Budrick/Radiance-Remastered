@@ -1,10 +1,13 @@
 package com.radiance.mixin_related.extensions.vulkan_render_integration;
 
+import com.mojang.blaze3d.textures.GpuTextureView;
 import org.joml.Vector3f;
 
 public interface ILightMapManagerExt {
 
     int radiance$getTextureId();
+
+    GpuTextureView radiance$getTextureView();
 
     float radiance$getAmbientLightFactor();
 

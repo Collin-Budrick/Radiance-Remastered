@@ -5,16 +5,16 @@ import com.radiance.client.constant.Constants;
 import com.radiance.client.proxy.world.EntityProxy;
 import com.radiance.client.vertex.PBRVertexConsumer;
 import com.radiance.client.vertex.StorageVertexConsumerProvider;
-import net.minecraft.client.gl.GlUsage;
-import net.minecraft.client.gl.VertexBuffer;
-import net.minecraft.client.option.CloudRenderMode;
-import net.minecraft.client.render.BuiltBuffer;
-import net.minecraft.client.render.CloudRenderer;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.util.math.ColorHelper;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
+import com.mojang.blaze3d.buffers.BufferUsage;
+import com.mojang.blaze3d.vertex.VertexBuffer;
+import net.minecraft.client.CloudStatus;
+import com.mojang.blaze3d.vertex.MeshData;
+import net.minecraft.client.renderer.CloudRenderer;
+import net.minecraft.client.renderer.rendertype.RenderType;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.util.ARGB;
+import net.minecraft.util.Mth;
+import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -40,7 +40,7 @@ public class CloudRendererMixins {
     private CloudRenderer.ViewMode viewMode;
 
     @Shadow
-    private CloudRenderMode renderMode;
+    private CloudStatus renderMode;
 
     @Shadow
     private CloudRenderer.CloudCells cells;
@@ -80,20 +80,20 @@ public class CloudRendererMixins {
     }
 
     @Redirect(method = "<init>", at = @At(value = "NEW", target = "net/minecraft/client/gl/VertexBuffer"))
-    private VertexBuffer cancelBufferInit(GlUsage usage) {
+    private VertexBuffer cancelBufferInit(BufferUsage usage) {
         return UnsafeManager.INSTANCE.allocateInstance(VertexBuffer.class);
     }
 
     @Inject(method =
-        "renderClouds(ILnet/minecraft/client/option/CloudRenderMode;FLorg/joml/Matrix4f;Lorg/joml/Matrix4f;"
+        "renderClouds(ILnet/minecraft/client/option/CloudStatus;FLorg/joml/Matrix4f;Lorg/joml/Matrix4f;"
             +
-            "Lnet/minecraft/util/math/Vec3d;F)V", at = @At(value = "HEAD"), cancellable = true)
+            "Lnet/minecraft/util/math/Vec3;F)V", at = @At(value = "HEAD"), cancellable = true)
     public void redirectCloudRendering(int color,
-        CloudRenderMode cloudRenderMode,
+        CloudStatus cloudRenderMode,
         float cloudHeight,
         Matrix4f positionMatrix,
         Matrix4f projectionMatrix,
-        Vec3d cameraPos,
+        Vec3 cameraPos,
         float ticks,
         CallbackInfo ci) {
         if (this.cells != null) {
@@ -112,16 +112,16 @@ public class CloudRendererMixins {
             double e = cameraPos.z + 3.96F;
             double h = this.cells.width() * 12.0;
             double i = this.cells.height() * 12.0;
-            d -= MathHelper.floor(d / h) * h;
-            e -= MathHelper.floor(e / i) * i;
-            int j = MathHelper.floor(d / 12.0);
-            int k = MathHelper.floor(e / 12.0);
+            d -= Mth.floor(d / h) * h;
+            e -= Mth.floor(e / i) * i;
+            int j = Mth.floor(d / 12.0);
+            int k = Mth.floor(e / 12.0);
             float l = (float) (d - j * 12.0F);
             float m = (float) (e - k * 12.0F);
-            RenderLayer
+            RenderType
                 renderLayer =
-                cloudRenderMode == CloudRenderMode.FANCY ? RenderLayer.getFastClouds()
-                    : RenderLayer.getNoCullingClouds();
+                cloudRenderMode == CloudStatus.FANCY ? RenderType.getFastClouds()
+                    : RenderType.getNoCullingClouds();
 
             if (this.field_53052 || j != this.centerX || k != this.centerZ
                 || viewMode != this.viewMode ||
@@ -151,20 +151,20 @@ public class CloudRendererMixins {
     }
 
     @Unique
-    private void tessellateClouds(int color, int x, int z, CloudRenderMode renderMode,
-        CloudRenderer.ViewMode viewMode, RenderLayer layer) {
-        float red = ColorHelper.getRedFloat(color);
-        float green = ColorHelper.getGreenFloat(color);
-        float blue = ColorHelper.getBlueFloat(color);
-        int i = ColorHelper.fromFloats(0.8F, red, green, blue);
-        int j = ColorHelper.fromFloats(0.8F, 0.9F * red, 0.9F * green, 0.9F * blue);
-        int k = ColorHelper.fromFloats(0.8F, 0.7F * red, 0.7F * green, 0.7F * blue);
-        int l = ColorHelper.fromFloats(0.8F, 0.8F * red, 0.8F * green, 0.8F * blue);
+    private void tessellateClouds(int color, int x, int z, CloudStatus renderMode,
+        CloudRenderer.ViewMode viewMode, RenderType layer) {
+        float red = ARGB.getRedFloat(color);
+        float green = ARGB.getGreenFloat(color);
+        float blue = ARGB.getBlueFloat(color);
+        int i = ARGB.fromFloats(0.8F, red, green, blue);
+        int j = ARGB.fromFloats(0.8F, 0.9F * red, 0.9F * green, 0.9F * blue);
+        int k = ARGB.fromFloats(0.8F, 0.7F * red, 0.7F * green, 0.7F * blue);
+        int l = ARGB.fromFloats(0.8F, 0.8F * red, 0.8F * green, 0.8F * blue);
 
         if (storageVertexConsumerProvider != null) {
             for (EntityProxy.EntityRenderData entityRenderData : entityRenderDataList) {
                 for (EntityProxy.EntityRenderLayer entityRenderLayer : entityRenderData) {
-                    BuiltBuffer vertexBuffer = entityRenderLayer.builtBuffer();
+                    MeshData vertexBuffer = entityRenderLayer.builtBuffer();
                     vertexBuffer.close();
                 }
             }
@@ -178,7 +178,7 @@ public class CloudRendererMixins {
         VertexConsumer vertexConsumer = storageVertexConsumerProvider.getBuffer(layer);
         if (vertexConsumer instanceof PBRVertexConsumer pbrVertexConsumer) {
             this.buildCloudCells(viewMode, pbrVertexConsumer, x, z, k, i, j, l,
-                renderMode == CloudRenderMode.FANCY);
+                renderMode == CloudStatus.FANCY);
         } else {
             throw new RuntimeException("CloudRenderer only supports PBRVertexConsumer");
         }
@@ -219,15 +219,15 @@ public class CloudRendererMixins {
                         if (fancy) {
                             this.buildCloudCellFancy(viewMode,
                                 builder,
-                                ColorHelper.mix(bottomColor, q),
-                                ColorHelper.mix(topColor, q),
-                                ColorHelper.mix(northSouthColor, q),
-                                ColorHelper.mix(eastWestColor, q),
+                                ARGB.mix(bottomColor, q),
+                                ARGB.mix(topColor, q),
+                                ARGB.mix(northSouthColor, q),
+                                ARGB.mix(eastWestColor, q),
                                 m,
                                 l,
                                 p);
                         } else {
-                            this.buildCloudCellFast(builder, ColorHelper.mix(topColor, q), m, l);
+                            this.buildCloudCellFast(builder, ARGB.mix(topColor, q), m, l);
                         }
                     }
                 }

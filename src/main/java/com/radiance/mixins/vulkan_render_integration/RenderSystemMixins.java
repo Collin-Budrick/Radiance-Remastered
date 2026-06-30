@@ -1,7 +1,9 @@
 package com.radiance.mixins.vulkan_render_integration;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.radiance.client.RendererAvailability;
 import com.radiance.client.proxy.vulkan.RendererProxy;
+import org.lwjgl.glfw.GLFW;
 import org.joml.Matrix4f;
 import org.joml.Matrix4fStack;
 import org.spongepowered.asm.mixin.Final;
@@ -30,6 +32,10 @@ public abstract class RenderSystemMixins {
 
     @Inject(method = "maxSupportedTextureSize()I", at = @At(value = "HEAD"), cancellable = true, remap = false)
     private static void redirectMaxSupportedTextureSize(CallbackInfoReturnable<Integer> cir) {
+        if (!RendererAvailability.isRendererLifecycleActive()) {
+            return;
+        }
+
         int maxImageSize = RendererProxy.maxSupportedTextureSize();
         cir.setReturnValue(maxImageSize);
     }
@@ -37,7 +43,11 @@ public abstract class RenderSystemMixins {
     @Redirect(method = "flipFrame(JLnet/minecraft/client/util/tracy/TracyFrameCapturer;)V",
         at = @At(value = "INVOKE", target = "Lorg/lwjgl/glfw/GLFW;glfwSwapBuffers(J)V", remap = false))
     private static void cancelSwapBuffers(long window) {
-
+        if (RendererAvailability.isRendererRequired()
+            && RendererAvailability.isRendererLifecycleActive()) {
+            return;
+        }
+        GLFW.glfwSwapBuffers(window);
     }
 
     @Redirect(method = "renderCrosshair(I)V", at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/platform/GLX;_renderCrosshair(IZZZ)V"))

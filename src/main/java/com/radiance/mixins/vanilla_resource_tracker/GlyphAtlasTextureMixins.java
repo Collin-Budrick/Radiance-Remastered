@@ -2,33 +2,33 @@ package com.radiance.mixins.vanilla_resource_tracker;
 
 import com.radiance.mixin_related.extensions.vanilla_resource_tracker.IGlyphAtlasTextureExt;
 import com.radiance.mixin_related.extensions.vanilla_resource_tracker.IRenderableGlyphExt;
-import net.minecraft.client.font.BakedGlyph;
-import net.minecraft.client.font.GlyphAtlasTexture;
-import net.minecraft.client.font.TextRenderLayerSet;
+import net.minecraft.client.gui.font.glyphs.BakedGlyph;
+import net.minecraft.client.gui.font.FontTexture;
+import net.minecraft.client.gui.font.GlyphRenderTypes;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 
-@Mixin(GlyphAtlasTexture.class)
+@Mixin(FontTexture.class)
 public abstract class GlyphAtlasTextureMixins extends AbstractTextureMixins implements
     IGlyphAtlasTextureExt {
 
     @Final
     @Shadow
-    private TextRenderLayerSet textRenderLayers;
+    private GlyphRenderTypes textRenderLayers;
     @Final
     @Shadow
     private boolean hasColor;
     @Final
     @Shadow
-    private GlyphAtlasTexture.Slot rootSlot;
+    private FontTexture.Slot rootSlot;
 
     @Override
     public BakedGlyph radiance$bake(IRenderableGlyphExt glyph) {
         if (glyph.hasColor() != this.hasColor) {
             return null;
         }
-        GlyphAtlasTexture.Slot slot = this.rootSlot.findSlotFor(glyph);
+        FontTexture.Slot slot = this.rootSlot.findSlotFor(glyph);
         if (slot != null) {
             this.bindTexture();
             glyph.upload(this.getGlId(), slot.x, slot.y);

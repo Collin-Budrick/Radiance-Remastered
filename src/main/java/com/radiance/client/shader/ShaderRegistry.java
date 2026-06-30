@@ -4,8 +4,8 @@ import com.radiance.client.RadianceClient;
 import com.radiance.client.constant.Constants;
 import com.radiance.client.proxy.vulkan.ShaderProxy;
 import com.radiance.mixin_related.extensions.vulkan_render_integration.IGlUniformExt;
-import com.radiance.mixin_related.extensions.vulkan_render_integration.IShaderProgramExt;
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,9 +20,8 @@ import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import net.minecraft.client.gl.GlUniform;
-import net.minecraft.client.gl.ShaderProgram;
-import net.minecraft.client.render.VertexFormat;
+import com.mojang.blaze3d.opengl.Uniform;
+import com.mojang.blaze3d.vertex.VertexFormat;
 
 public final class ShaderRegistry {
 
@@ -30,13 +29,13 @@ public final class ShaderRegistry {
         "^\\s*(?:layout\\s*\\([^)]*\\)\\s*)?uniform\\s+sampler\\w+\\s+(\\w+)\\s*;\\s*$");
     private static final Pattern SAMPLER_SLOT_PATTERN = Pattern.compile("\\bSampler(\\d+)\\b");
 
-    private static final Map<ShaderProgram, ShaderDefinition> CACHE =
+    private static final Map<Object, ShaderDefinition> CACHE =
         Collections.synchronizedMap(new WeakHashMap<>());
 
     private ShaderRegistry() {
     }
 
-    public static ShaderDefinition getOrCreate(ShaderProgram shaderProgram) {
+    public static ShaderDefinition getOrCreate(Object shaderProgram) {
         ShaderDefinition cached = CACHE.get(shaderProgram);
         if (cached != null) {
             return cached;
@@ -51,18 +50,22 @@ public final class ShaderRegistry {
         CACHE.clear();
     }
 
-    private static ShaderDefinition create(ShaderProgram shaderProgram) {
-        IShaderProgramExt ext = (IShaderProgramExt) (Object) shaderProgram;
-        VertexFormat vertexFormat = ext.radiance$getVertexFormat();
-        String vertexSource = ext.radiance$getVertexSource();
-        String fragmentSource = ext.radiance$getFragmentSource();
-        String shaderName = ext.radiance$getShaderName();
+    private static ShaderDefinition create(Object shaderProgram) {
+        VertexFormat vertexFormat = invoke(shaderProgram, "radiance$getVertexFormat",
+            VertexFormat.class);
+        String vertexSource = invoke(shaderProgram, "radiance$getVertexSource", String.class);
+        String fragmentSource = invoke(shaderProgram, "radiance$getFragmentSource", String.class);
+        String shaderName = invoke(shaderProgram, "radiance$getShaderName", String.class);
         if (vertexFormat == null || vertexSource == null || fragmentSource == null
             || shaderName == null) {
             throw new IllegalStateException("Missing shader metadata for dynamic registration");
         }
-        List<ShaderField> fields = buildFields(ext.radiance$getUniformsValue(),
-            ext.radiance$getSamplerNamesValue(), vertexSource, fragmentSource);
+        List<Uniform> uniforms = invokeList(shaderProgram, "radiance$getUniformsValue",
+            Uniform.class);
+        List<String> samplerNames = invokeList(shaderProgram, "radiance$getSamplerNamesValue",
+            String.class);
+        List<ShaderField> fields = buildFields(uniforms, samplerNames, vertexSource,
+            fragmentSource);
 
         ShaderTranslator.Result result = ShaderTranslator.translate(vertexFormat, vertexSource,
             fragmentSource, fields);
@@ -76,7 +79,7 @@ public final class ShaderRegistry {
         writeIfChanged(fragmentPath, result.fragmentSource());
 
         int nativeId = ShaderProxy.registerShader(key,
-            Constants.VertexFormats.getValue(vertexFormat),
+            Constants.DefaultVertexFormat.getValue(vertexFormat),
             Constants.DrawModes.QUADS.getValue(),
             result.uniformBufferSize(),
             vertexPath.toString(),
@@ -86,12 +89,12 @@ public final class ShaderRegistry {
         return new ShaderDefinition(key, shaderName, nativeId, result.uniformBufferSize(), fields);
     }
 
-    private static List<ShaderField> buildFields(List<GlUniform> uniforms,
+    private static List<ShaderField> buildFields(List<Uniform> uniforms,
         List<String> samplerNames, String vertexSource, String fragmentSource) {
         ArrayList<ShaderField> fields = new ArrayList<>();
         int offset = 0;
 
-        for (GlUniform uniform : uniforms) {
+        for (Uniform uniform : uniforms) {
             IGlUniformExt ext = (IGlUniformExt) (Object) uniform;
             int dataType = ext.radiance$getDataTypeValue();
             int componentCount = getComponentCount(dataType);
@@ -99,7 +102,8 @@ public final class ShaderRegistry {
             int alignment = getAlignment(kind, componentCount);
             int size = getSize(kind, componentCount);
             offset = align(offset, alignment);
-            fields.add(new ShaderField(uniform.getName(), uniform.getName(), kind,
+            String uniformName = getUniformName(uniform);
+            fields.add(new ShaderField(uniformName, uniformName, kind,
                 componentCount, offset, size, -1));
             offset += size;
         }
@@ -201,6 +205,46 @@ public final class ShaderRegistry {
 
     private static int align(int value, int alignment) {
         return Math.ceilDiv(value, alignment) * alignment;
+    }
+
+    private static String getUniformName(Uniform uniform) {
+        String name = invoke(uniform, "getName", String.class);
+        if (name != null) {
+            return name;
+        }
+        name = invoke(uniform, "name", String.class);
+        return name != null ? name : "Uniform" + Integer.toHexString(System.identityHashCode(uniform));
+    }
+
+    private static <T> T invoke(Object target, String methodName, Class<T> type) {
+        try {
+            Method method = target.getClass()
+                .getMethod(methodName);
+            Object value = method.invoke(target);
+            return type.isInstance(value) ? type.cast(value) : null;
+        } catch (ReflectiveOperationException e) {
+            return null;
+        }
+    }
+
+    private static <T> List<T> invokeList(Object target, String methodName, Class<T> type) {
+        try {
+            Method method = target.getClass()
+                .getMethod(methodName);
+            Object value = method.invoke(target);
+            if (!(value instanceof List<?> list)) {
+                return List.of();
+            }
+            ArrayList<T> result = new ArrayList<>();
+            for (Object entry : list) {
+                if (type.isInstance(entry)) {
+                    result.add(type.cast(entry));
+                }
+            }
+            return List.copyOf(result);
+        } catch (ReflectiveOperationException e) {
+            return List.of();
+        }
     }
 
     private static String buildKey(String shaderName, VertexFormat vertexFormat, String vertexSource,

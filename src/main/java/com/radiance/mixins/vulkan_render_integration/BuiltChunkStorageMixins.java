@@ -1,47 +1,52 @@
 package com.radiance.mixins.vulkan_render_integration;
 
 import com.radiance.client.proxy.world.ChunkProxy;
-import net.minecraft.client.render.BuiltChunkStorage;
-import net.minecraft.util.math.ChunkSectionPos;
-import net.minecraft.world.World;
+import com.radiance.mixin_related.extensions.vulkan_render_integration.IViewAreaExt;
+import net.minecraft.client.RotatingSectionStorage;
+import net.minecraft.client.renderer.SectionOcclusionGraph;
+import net.minecraft.client.renderer.ViewArea;
+import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
+import net.minecraft.core.SectionPos;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin(BuiltChunkStorage.class)
-public class BuiltChunkStorageMixins {
-
-    @Shadow
-    protected int sizeY;
+@Mixin(ViewArea.class)
+public class BuiltChunkStorageMixins implements IViewAreaExt {
 
     @Shadow
-    protected int sizeX;
+    @Final
+    private RotatingSectionStorage<SectionRenderDispatcher.RenderSection> sections;
 
-    @Shadow
-    protected int sizeZ;
+    @Inject(method = "<init>", at = @At(value = "TAIL"))
+    private void initChunkProxy(SectionRenderDispatcher sectionRenderDispatcher, int minY,
+        int maxY, int minSectionY, int sectionCount, int viewDistance,
+        SectionOcclusionGraph sectionOcclusionGraph, CallbackInfo ci) {
+        ViewArea viewArea = (ViewArea) (Object) this;
+        int horizontalSectionCount = viewArea.getViewDistance() * 2 + 1;
+        ChunkProxy.setStorage(viewArea);
+        ChunkProxy.init(viewArea.size(), horizontalSectionCount, viewArea.sectionCount(),
+            horizontalSectionCount, viewArea.minSectionY());
+    }
 
-    @Shadow
-    protected World world;
-
-    @Inject(method = "clear()V", at = @At(value = "HEAD"))
-    public void clearChunkProxy(CallbackInfo ci) {
+    @Inject(method = "releaseAllBuffers()V", at = @At(value = "HEAD"))
+    private void clearChunkProxy(CallbackInfo ci) {
         ChunkProxy.clear();
     }
 
-    @ModifyVariable(method = "createChunks(Lnet/minecraft/client/render/chunk/ChunkBuilder;)V", at = @At(value = "STORE"), ordinal = 0)
-    private int initChunkRebuildGrid(int i) {
-        ChunkProxy.setStorage((BuiltChunkStorage) (Object) this);
-        ChunkProxy.init(i, sizeX, sizeY, sizeZ, world.getBottomSectionCoord());
-        ChunkProxy.setStorage((BuiltChunkStorage) (Object) this);
-        return i;
+    @Inject(method = "repositionCamera(Lnet/minecraft/core/SectionPos;)Z",
+        at = @At(value = "HEAD"))
+    private void updateChunkStorageSectionPos(SectionPos sectionPos,
+        CallbackInfoReturnable<Boolean> cir) {
+        ChunkProxy.updateSectionPos(sectionPos);
     }
 
-    @Inject(method = "updateCameraPosition(Lnet/minecraft/util/math/ChunkSectionPos;)V",
-        at = @At(value = "HEAD"))
-    private void updateChunkStorageSectionPos(ChunkSectionPos sectionPos, CallbackInfo ci) {
-        ChunkProxy.updateSectionPos(sectionPos);
+    @Override
+    public RotatingSectionStorage<SectionRenderDispatcher.RenderSection> radiance$getSections() {
+        return this.sections;
     }
 }

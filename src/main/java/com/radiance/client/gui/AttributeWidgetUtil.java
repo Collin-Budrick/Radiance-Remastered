@@ -6,14 +6,14 @@ import com.radiance.client.pipeline.config.AttributeConfig;
 import java.util.List;
 import java.util.Locale;
 
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.ClickableWidget;
-import net.minecraft.client.gui.widget.SliderWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.text.Text;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.AbstractSliderButton;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
 
 final class AttributeWidgetUtil {
 
@@ -49,17 +49,17 @@ final class AttributeWidgetUtil {
         }
     }
 
-    static void drawBorder(DrawContext ctx, int x, int y, int w, int h, int color) {
+    static void drawBorder(GuiGraphicsExtractor ctx, int x, int y, int w, int h, int color) {
         ctx.fill(x, y, x + w, y + 1, color);
         ctx.fill(x, y + h - 1, x + w, y + h, color);
         ctx.fill(x, y, x + 1, y + h, color);
         ctx.fill(x + w - 1, y, x + w, y + h, color);
     }
 
-    static void layoutWidgets(List<ClickableWidget> widgets, int x, int y, int singleWidth,
+    static void layoutWidgets(List<AbstractWidget> widgets, int x, int y, int singleWidth,
         int tripleWidth, int gap) {
         if (widgets.size() == 1) {
-            ClickableWidget w = widgets.get(0);
+            AbstractWidget w = widgets.get(0);
             w.setX(x);
             w.setY(y);
             w.setWidth(singleWidth);
@@ -68,7 +68,7 @@ final class AttributeWidgetUtil {
 
         if (widgets.size() == 3) {
             for (int i = 0; i < 3; i++) {
-                ClickableWidget cw = widgets.get(i);
+                AbstractWidget cw = widgets.get(i);
                 cw.setX(x + i * (tripleWidth + gap));
                 cw.setY(y);
                 cw.setWidth(tripleWidth);
@@ -76,14 +76,14 @@ final class AttributeWidgetUtil {
         }
     }
 
-    static int totalWidgetWidth(List<ClickableWidget> widgets, int singleWidth, int tripleWidth, int gap) {
+    static int totalWidgetWidth(List<AbstractWidget> widgets, int singleWidth, int tripleWidth, int gap) {
         if (widgets.size() == 3) {
             return (tripleWidth * 3) + (gap * 2);
         }
         return singleWidth;
     }
 
-    static List<ClickableWidget> buildWidgets(Module module, AttributeConfig cfg, TextRenderer textRenderer,
+    static List<AbstractWidget> buildWidgets(Module module, AttributeConfig cfg, Font textRenderer,
         int width,
         int vec3ComponentWidth) {
         String type = cfg.type == null ? "" : cfg.type.toLowerCase(Locale.ROOT);
@@ -110,17 +110,17 @@ final class AttributeWidgetUtil {
         };
     }
 
-    private static ClickableWidget buildBoolWidget(Module module, AttributeConfig cfg, int width) {
+    private static AbstractWidget buildBoolWidget(Module module, AttributeConfig cfg, int width) {
         boolean b = "render_pipeline.true".equalsIgnoreCase(cfg.value);
-        return ButtonWidget.builder(
+        return Button.builder(
             module.translateText(b ? "render_pipeline.true" : "render_pipeline.false"), btn -> {
                 boolean nv = !"render_pipeline.true".equalsIgnoreCase(cfg.value);
                 cfg.value = nv ? "render_pipeline.true" : "render_pipeline.false";
                 btn.setMessage(module.translateText(cfg.value));
-            }).dimensions(0, 0, width, 20).build();
+            }).bounds(0, 0, width, 20).build();
     }
 
-    private static ClickableWidget buildEnumWidget(Module module, AttributeConfig cfg, String raw, int width) {
+    private static AbstractWidget buildEnumWidget(Module module, AttributeConfig cfg, String raw, int width) {
         String[] values = raw.isEmpty() ? new String[]{"<empty>"} : raw.split("-");
         int idx = 0;
         if (cfg.value != null) {
@@ -135,20 +135,19 @@ final class AttributeWidgetUtil {
         }
 
         int[] index = new int[]{idx};
-        return ButtonWidget.builder(module.translateText(values[index[0]]), btn -> {
+        return Button.builder(module.translateText(values[index[0]]), btn -> {
             index[0] = (index[0] + 1) % values.length;
             cfg.value = values[index[0]];
             btn.setMessage(module.translateText(cfg.value));
-        }).dimensions(0, 0, width, 20).build();
+        }).bounds(0, 0, width, 20).build();
     }
 
-    private static ClickableWidget buildIntWidget(AttributeConfig cfg, TextRenderer textRenderer,
+    private static AbstractWidget buildIntWidget(AttributeConfig cfg, Font textRenderer,
         int width) {
-        TextFieldWidget tf = new TextFieldWidget(textRenderer, 0, 0, width, 20, Text.empty());
+        EditBox tf = new EditBox(textRenderer, 0, 0, width, 20, Component.empty());
         tf.setMaxLength(64);
-        tf.setText(cfg.value == null ? "" : cfg.value);
-        tf.setTextPredicate(s -> s.isEmpty() || s.equals("-") || s.matches("-?\\d+"));
-        tf.setChangedListener(text -> {
+        tf.setValue(cfg.value == null ? "" : cfg.value);
+        tf.setResponder(text -> {
             if (isStrictInt(text)) {
                 cfg.value = text;
             }
@@ -156,16 +155,12 @@ final class AttributeWidgetUtil {
         return tf;
     }
 
-    private static ClickableWidget buildFloatWidget(AttributeConfig cfg, TextRenderer textRenderer,
+    private static AbstractWidget buildFloatWidget(AttributeConfig cfg, Font textRenderer,
         int width) {
-        TextFieldWidget tf = new TextFieldWidget(textRenderer, 0, 0, width, 20, Text.empty());
+        EditBox tf = new EditBox(textRenderer, 0, 0, width, 20, Component.empty());
         tf.setMaxLength(64);
-        tf.setText(cfg.value == null ? "" : cfg.value);
-        tf.setTextPredicate(
-            s -> s.isEmpty() || s.equals("-") || s.equals(".") || s.equals("-.") || s.matches(
-                "-?\\d+")
-                || s.matches("-?\\d+\\.") || s.matches("-?\\d*\\.\\d+"));
-        tf.setChangedListener(text -> {
+        tf.setValue(cfg.value == null ? "" : cfg.value);
+        tf.setResponder(text -> {
             if (isStrictFloat(text)) {
                 cfg.value = text;
             }
@@ -173,57 +168,53 @@ final class AttributeWidgetUtil {
         return tf;
     }
 
-    private static ClickableWidget buildStringWidget(AttributeConfig cfg, TextRenderer textRenderer,
+    private static AbstractWidget buildStringWidget(AttributeConfig cfg, Font textRenderer,
         int width) {
-        TextFieldWidget tf = new TextFieldWidget(textRenderer, 0, 0, width, 20, Text.empty());
+        EditBox tf = new EditBox(textRenderer, 0, 0, width, 20, Component.empty());
         tf.setMaxLength(128);
-        tf.setText(cfg.value == null ? "" : cfg.value);
-        tf.setChangedListener(text -> cfg.value = text);
+        tf.setValue(cfg.value == null ? "" : cfg.value);
+        tf.setResponder(text -> cfg.value = text);
         return tf;
     }
 
-    private static List<ClickableWidget> buildVec3Widget(AttributeConfig cfg,
-        TextRenderer textRenderer,
+    private static List<AbstractWidget> buildVec3Widget(AttributeConfig cfg,
+        Font textRenderer,
         int componentWidth) {
         if (cfg.value == null || cfg.value.isEmpty()) {
             cfg.value = "0,0,0";
         }
 
         float[] v = parseVec3(cfg.value);
-        TextFieldWidget x = vecField(textRenderer, v[0], componentWidth);
-        TextFieldWidget y = vecField(textRenderer, v[1], componentWidth);
-        TextFieldWidget z = vecField(textRenderer, v[2], componentWidth);
+        EditBox x = vecField(textRenderer, v[0], componentWidth);
+        EditBox y = vecField(textRenderer, v[1], componentWidth);
+        EditBox z = vecField(textRenderer, v[2], componentWidth);
 
         Runnable syncIfValid = () -> {
-            String sx = x.getText();
-            String sy = y.getText();
-            String sz = z.getText();
+            String sx = x.getValue();
+            String sy = y.getValue();
+            String sz = z.getValue();
 
             if (isStrictFloat(sx) && isStrictFloat(sy) && isStrictFloat(sz)) {
                 cfg.value = sx + "," + sy + "," + sz;
             }
         };
 
-        x.setChangedListener(s -> syncIfValid.run());
-        y.setChangedListener(s -> syncIfValid.run());
-        z.setChangedListener(s -> syncIfValid.run());
+        x.setResponder(s -> syncIfValid.run());
+        y.setResponder(s -> syncIfValid.run());
+        z.setResponder(s -> syncIfValid.run());
 
         syncIfValid.run();
         return List.of(x, y, z);
     }
 
-    private static TextFieldWidget vecField(TextRenderer textRenderer, float v, int width) {
-        TextFieldWidget tf = new TextFieldWidget(textRenderer, 0, 0, width, 20, Text.empty());
+    private static EditBox vecField(Font textRenderer, float v, int width) {
+        EditBox tf = new EditBox(textRenderer, 0, 0, width, 20, Component.empty());
         tf.setMaxLength(32);
-        tf.setText(trimFloat(v));
-        tf.setTextPredicate(
-            s -> s.isEmpty() || s.equals("-") || s.equals(".") || s.equals("-.") || s.matches(
-                "-?\\d+")
-                || s.matches("-?\\d+\\.") || s.matches("-?\\d*\\.\\d+"));
+        tf.setValue(trimFloat(v));
         return tf;
     }
 
-    private static ClickableWidget buildIntRange(AttributeConfig cfg, String raw, int width) {
+    private static AbstractWidget buildIntRange(AttributeConfig cfg, String raw, int width) {
         Range r = parseRange(raw);
         int start = (int) r.start;
         int end = (int) r.end;
@@ -239,14 +230,14 @@ final class AttributeWidgetUtil {
         } else {
             cfg.value = String.valueOf(start);
         }
-        cur = MathHelper.clamp(cur, start, end);
+        cur = Mth.clamp(cur, start, end);
 
         IntRangeSlider slider = new IntRangeSlider(0, 0, width, 20, start, end, cur, cfg);
         slider.updateMessage();
         return slider;
     }
 
-    private static ClickableWidget buildFloatRange(AttributeConfig cfg, String raw, int width) {
+    private static AbstractWidget buildFloatRange(AttributeConfig cfg, String raw, int width) {
         Range r = parseRange(raw);
         float start = (float) r.start;
         float end = (float) r.end;
@@ -262,7 +253,7 @@ final class AttributeWidgetUtil {
         } else {
             cfg.value = formatTwoDecimals(start);
         }
-        cur = MathHelper.clamp(cur, start, end);
+        cur = Mth.clamp(cur, start, end);
 
         FloatRangeSlider slider = new FloatRangeSlider(0, 0, width, 20, start, end, cur, cfg);
         slider.updateMessage();
@@ -332,7 +323,7 @@ final class AttributeWidgetUtil {
 
     }
 
-    private static class IntRangeSlider extends SliderWidget {
+    private static class IntRangeSlider extends AbstractSliderButton {
 
         private final int start;
         private final int end;
@@ -340,7 +331,7 @@ final class AttributeWidgetUtil {
 
         public IntRangeSlider(int x, int y, int width, int height, int start, int end, int cur,
             AttributeConfig cfg) {
-            super(x, y, width, height, Text.empty(),
+            super(x, y, width, height, Component.empty(),
                 (cur - (double) start) / (double) (end - start));
             this.start = start;
             this.end = end;
@@ -357,17 +348,17 @@ final class AttributeWidgetUtil {
 
         @Override
         protected void updateMessage() {
-            setMessage(Text.translatable(Integer.toString(current())));
+            setMessage(Component.translatable(Integer.toString(current())));
         }
 
         @Override
         protected void applyValue() {
-            int v = MathHelper.clamp(current(), start, end);
+            int v = Mth.clamp(current(), start, end);
             cfg.value = Integer.toString(v);
         }
     }
 
-    private static class FloatRangeSlider extends SliderWidget {
+    private static class FloatRangeSlider extends AbstractSliderButton {
 
         private final float start;
         private final float end;
@@ -376,7 +367,7 @@ final class AttributeWidgetUtil {
         public FloatRangeSlider(int x, int y, int width, int height, float start, float end,
             float cur,
             AttributeConfig cfg) {
-            super(x, y, width, height, Text.empty(), (cur - start) / (double) (end - start));
+            super(x, y, width, height, Component.empty(), (cur - start) / (double) (end - start));
             this.start = start;
             this.end = end;
             this.cfg = cfg;
@@ -392,12 +383,12 @@ final class AttributeWidgetUtil {
 
         @Override
         protected void updateMessage() {
-            setMessage(Text.translatable(formatTwoDecimals(current())));
+            setMessage(Component.translatable(formatTwoDecimals(current())));
         }
 
         @Override
         protected void applyValue() {
-            float v = MathHelper.clamp(current(), start, end);
+            float v = Mth.clamp(current(), start, end);
             cfg.value = formatTwoDecimals(v);
         }
     }

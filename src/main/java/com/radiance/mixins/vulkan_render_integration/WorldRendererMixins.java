@@ -1,408 +1,291 @@
 package com.radiance.mixins.vulkan_render_integration;
 
-import com.llamalad7.mixinextras.sugar.Local;
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.radiance.client.UnsafeManager;
+import com.mojang.blaze3d.buffers.GpuBufferSlice;
+import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
+import com.mojang.blaze3d.textures.GpuTextureView;
+import com.radiance.client.RadianceClient;
+import com.radiance.client.RendererAvailability;
 import com.radiance.client.proxy.vulkan.BufferProxy;
 import com.radiance.client.proxy.world.ChunkProxy;
-import com.radiance.client.proxy.world.EntityProxy;
 import com.radiance.client.proxy.world.PlayerProxy;
-import com.radiance.client.vertex.StorageVertexConsumerProvider;
-import com.radiance.mixin_related.extensions.vulkan_render_integration.IGameRendererExt;
-import com.radiance.mixin_related.extensions.vulkan_render_integration.ILightMapManagerExt;
-import com.radiance.mixin_related.extensions.vulkan_render_integration.IOverlayTextureExt;
-import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
-import it.unimi.dsi.fastutil.objects.ObjectArrayList;
-import java.util.List;
-import java.util.Set;
-import java.util.SortedSet;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.option.CloudRenderMode;
-import net.minecraft.client.render.BackgroundRenderer;
-import net.minecraft.client.render.BuiltChunkStorage;
-import net.minecraft.client.render.Camera;
-import net.minecraft.client.render.ChunkRenderingDataPreparer;
-import net.minecraft.client.render.CloudRenderer;
-import net.minecraft.client.render.DimensionEffects;
-import net.minecraft.client.render.Fog;
-import net.minecraft.client.render.Frustum;
-import net.minecraft.client.render.GameRenderer;
-import net.minecraft.client.render.OverlayTexture;
-import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.client.render.SkyRendering;
-import net.minecraft.client.render.WeatherRendering;
-import net.minecraft.client.render.WorldBorderRendering;
-import net.minecraft.client.render.WorldRenderer;
-import net.minecraft.client.render.block.entity.BlockEntityRenderDispatcher;
-import net.minecraft.client.render.block.entity.EndPortalBlockEntityRenderer;
-import net.minecraft.client.render.chunk.ChunkBuilder;
-import net.minecraft.client.render.entity.EntityRenderDispatcher;
-import net.minecraft.client.texture.TextureManager;
-import net.minecraft.client.util.ObjectAllocator;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.player.BlockBreakingInfo;
-import net.minecraft.util.Pair;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ColorHelper;
-import net.minecraft.util.math.ChunkPos;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.RotationAxis;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.util.profiler.Profiler;
+import com.radiance.client.texture.TextureResourceBridge;
+import com.radiance.client.texture.TextureTracker;
+import com.radiance.client.texture.TextureUploadReplay;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.ViewArea;
+import net.minecraft.client.renderer.state.level.LevelRenderState;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.client.renderer.state.level.SkyRenderState;
+import net.minecraft.util.ARGB;
+import net.minecraft.world.level.dimension.DimensionType;
+import net.minecraft.world.level.material.FogType;
 import org.joml.Matrix4f;
+import org.joml.Matrix4fc;
 import org.joml.Vector3f;
 import org.joml.Vector4f;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin(WorldRenderer.class)
+@Mixin(LevelRenderer.class)
 public abstract class WorldRendererMixins {
 
     @Shadow
-    private ClientWorld world;
-
-    @Final
-    @Shadow
-    private MinecraftClient client;
-
-    @Final
-    @Shadow
-    private EntityRenderDispatcher entityRenderDispatcher;
-
-    @Final
-    @Shadow
-    private BlockEntityRenderDispatcher blockEntityRenderDispatcher;
-
-    @Shadow
-    private BuiltChunkStorage chunks;
-
-    @Shadow
-    private Frustum frustum;
-
-    @Final
-    @Shadow
-    private List<Entity> renderedEntities;
-
-    @Shadow
-    private int renderedEntitiesCount;
-
-    @Shadow
-    private double lastCameraPitch;
-
-    @Shadow
-    private double lastCameraYaw;
-
-    @Final
-    @Shadow
-    private ObjectArrayList<ChunkBuilder.BuiltChunk> builtChunks;
+    private ViewArea viewArea;
 
     @Shadow
     @Final
-    private Long2ObjectMap<SortedSet<BlockBreakingInfo>> blockBreakingProgressions;
+    private LevelRenderState levelRenderState;
 
-    @Shadow
-    @Final
-    private Set<BlockEntity> noCullingBlockEntities;
+    @Unique
+    private static boolean radiance$loggedWorldUniformBridge = false;
+    @Unique
+    private static boolean radiance$loggedSkyUniformBridge = false;
+    @Unique
+    private static boolean radiance$loggedCameraBridge = false;
+    @Unique
+    private static boolean radiance$loggedMatrixBridge = false;
+    @Unique
+    private static boolean radiance$loggedProjectionFallback = false;
 
-    @Shadow
-    @Final
-    private WeatherRendering weatherRendering;
-
-    @Shadow
-    @Final
-    private WorldBorderRendering worldBorderRendering;
-
-    @Shadow
-    private int ticks;
-    @Shadow
-    @Final
-    private CloudRenderer cloudRenderer;
-    // endregion
-
-    // region <init>
-    @Redirect(method = "<init>", at = @At(value = "NEW", target = "net/minecraft/client/render/SkyRendering"))
-    private SkyRendering cancelNewSkyRendering() {
-        return UnsafeManager.INSTANCE.allocateInstance(SkyRendering.class);
-    }
-    // endregion
-
-    @Redirect(method = "scheduleTerrainUpdate()V", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/render/ChunkRenderingDataPreparer;scheduleTerrainUpdate()V"))
-    public void cancelTerrainUpdateWithChunkRenderingDataPreparer(
-        ChunkRenderingDataPreparer instance) {
-
-    }
-
-    // region <close>
-    @Redirect(method = "close()V", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/render/SkyRendering;close()V"))
-    public void cancelSkyRenderingClose(SkyRendering instance) {
-
-    }
-
-    @Redirect(method = "reload(Lnet/minecraft/resource/ResourceManager;)V", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/render/WorldRenderer;loadEntityOutlinePostProcessor()V"))
-    public void cancelReloadWithResourceManager(WorldRenderer instance) {
-
-    }
-
-    @Redirect(method = "reload()V", at = @At(value = "INVOKE", target =
-        "Lnet/minecraft/client/render/ChunkRenderingDataPreparer;setStorage"
-            + "(Lnet/minecraft/client/render/BuiltChunkStorage;)V"))
-    public void cancelReloadWithChunkRenderingDataPreparerSetStorage(
-        ChunkRenderingDataPreparer instance, BuiltChunkStorage storage) {
-
-    }
-
-    @Redirect(method = "getEntitiesToRender(Lnet/minecraft/client/render/Camera;Lnet/minecraft/client/render/Frustum;Ljava/util/List;)Z", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/render/Camera;isThirdPerson()Z"))
-    public boolean enablePlayerRendererInFirstPlayer(Camera instance) {
-        return true;
-    }
-
-    @Redirect(method = "getEntitiesToRender(Lnet/minecraft/client/render/Camera;Lnet/minecraft/client/render/Frustum;Ljava/util/List;)Z", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/render/entity/EntityRenderDispatcher;shouldRender(Lnet/minecraft/entity/Entity;Lnet/minecraft/client/render/Frustum;DDD)Z"))
-    public <E extends Entity> boolean loosenEntityFiltering(EntityRenderDispatcher instance,
-        E entity, Frustum frustum, double x, double y, double z) {
-        Vec3d vec3d = entity.getPos().subtract(new Vec3d(x, y, z));
-        double distance = vec3d.length();
-        if (distance < 16 * 3) {
-            return true;
+    @Inject(method = "render", at = @At("HEAD"))
+    private void radiance$beginWorldRender(GraphicsResourceAllocator allocator,
+        DeltaTracker tickCounter, boolean renderBlockOutline, CameraRenderState camera,
+        Matrix4fc frustumMatrix, GpuBufferSlice fogBuffer, Vector4f fogColor,
+        boolean panoramicMode, CallbackInfo ci) {
+        if (camera.pos != null) {
+            PlayerProxy.setCameraPos(camera.pos);
         }
-        return this.entityRenderDispatcher.shouldRender(entity, frustum, x, y, z);
-    }
-
-    // region <render>
-    @Shadow
-    protected abstract void setupTerrain(Camera camera, Frustum frustum, boolean hasForcedFrustum,
-        boolean spectator);
-
-    @Shadow
-    protected abstract boolean getEntitiesToRender(Camera camera, Frustum frustum,
-        List<Entity> output);
-
-    @Shadow
-    protected abstract boolean canDrawEntityOutlines();
-
-    @Shadow
-    protected abstract void applyFrustum(Frustum frustum);
-
-    @Shadow
-    protected abstract boolean isSkyDark(float tickDelta);
-
-    @Shadow
-    protected abstract boolean hasBlindnessOrDarkness(Camera camera);
-
-    @Inject(method =
-        "render(Lnet/minecraft/client/util/ObjectAllocator;Lnet/minecraft/client/render/RenderTickCounter;"
-            + "ZLnet/minecraft/client/render/Camera;Lnet/minecraft/client/render/GameRenderer;Lorg/joml/Matrix4f;Lorg/joml/Matrix4f;)V", at = @At("HEAD"), cancellable = true)
-    public void redirectRender(ObjectAllocator allocator, RenderTickCounter tickCounter,
-        boolean renderBlockOutline, Camera camera, GameRenderer gameRenderer,
-        Matrix4f effectedRotationMatrix, Matrix4f projectionMatrix, CallbackInfo ci) {
-        PlayerProxy.setCameraPos(camera.getPos());
-
-        float f = tickCounter.getTickDelta(false);
-        RenderSystem.setShaderGameTime(this.world.getTime(), f);
-        this.blockEntityRenderDispatcher.configure(this.world, camera, this.client.crosshairTarget);
-        this.entityRenderDispatcher.configure(this.world, camera, this.client.targetedEntity);
-
-        this.world.runQueuedChunkUpdates();
-        this.world.getChunkManager().getLightingProvider().doLightUpdates();
-
-        Frustum frustum = this.frustum;
-
-        Vec3d vec3d = camera.getPos();
-        double x = vec3d.getX();
-        double y = vec3d.getY();
-        double z = vec3d.getZ();
-
-        this.setupTerrain(camera, frustum, false, false);
-
-        boolean renderEntityOutline = this.getEntitiesToRender(camera, frustum,
-            this.renderedEntities);
-
-        Matrix4f viewMatrix = new Matrix4f(
-            ((IGameRendererExt) gameRenderer).radiance$getRotationMatrix());
-        Matrix4f effectedViewMatrix = new Matrix4f(effectedRotationMatrix);
-
-        // fog
-        float h = gameRenderer.getViewDistance();
-        boolean bl2 = this.client.world.getDimensionEffects()
-            .useThickFog(MathHelper.floor(x), MathHelper.floor(y))
-            || this.client.inGameHud.getBossBarHud().shouldThickenFog();
-        Vector4f vector4f = BackgroundRenderer.getFogColor(camera, f, this.client.world,
-            this.client.options.getClampedViewDistance(), gameRenderer.getSkyDarkness(f));
-        Fog fog = BackgroundRenderer.applyFog(camera, BackgroundRenderer.FogType.FOG_TERRAIN,
-            vector4f, h, bl2, f);
-
-        TextureManager textureManager = MinecraftClient.getInstance().getTextureManager();
-        OverlayTexture overlayTexture = gameRenderer.getOverlayTexture();
-        int overlayTextureID = ((IOverlayTextureExt) overlayTexture).radiance$getTexture()
-            .getGlId();
-        int endSkyTextureID = textureManager.getTexture(EndPortalBlockEntityRenderer.SKY_TEXTURE)
-            .getGlId();
-        int endPortalTextureID = textureManager.getTexture(
-            EndPortalBlockEntityRenderer.PORTAL_TEXTURE).getGlId();
-        ILightMapManagerExt lightMapManagerExt = (ILightMapManagerExt) (gameRenderer.getLightmapTextureManager());
-        BufferProxy.updateWorldUniform(camera, viewMatrix, effectedViewMatrix, projectionMatrix,
-            overlayTextureID, fog, world, endSkyTextureID, endPortalTextureID,
-            lightMapManagerExt.radiance$getTextureId());
-
-        // Sky
-        float tickDelta = tickCounter.getTickDelta(false);
-        float skyAngle = this.world.getSkyAngle(tickDelta);
-        int baseColor = this.world.getSkyColor(camera.getPos(), tickDelta);
-
-        DimensionEffects dimensionEffects = this.world.getDimensionEffects();
-        int horizonColor = dimensionEffects.getSkyColor(skyAngle);
-
-        MatrixStack matrixStack = new MatrixStack();
-        matrixStack.push();
-        matrixStack.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-90.0F));
-        matrixStack.multiply(RotationAxis.POSITIVE_X.rotationDegrees(skyAngle * 360.0F));
-        Matrix4f rotationMatrix = matrixStack.peek().getPositionMatrix();
-        Vector3f sunDirection = rotationMatrix.transformPosition(0, 1, 0, new Vector3f())
-            .normalize();
-        matrixStack.pop();
-
-        boolean hasBlindnessOrDarkness = this.hasBlindnessOrDarkness(camera);
-
-        int submersionType = camera.getSubmersionType().ordinal();
-
-        int moonPhase = this.world.getMoonPhase();
-
-        float rainGradient = this.world.getRainGradient(tickDelta);
-
-        int sunTextureID = textureManager.getTexture(SkyRendering.SUN_TEXTURE).getGlId();
-
-        int moonTextureID = textureManager.getTexture(SkyRendering.MOON_PHASES_TEXTURE).getGlId();
-
-        BufferProxy.updateSkyUniform(ColorHelper.getRedFloat(baseColor),
-            ColorHelper.getGreenFloat(baseColor), ColorHelper.getBlueFloat(baseColor),
-            ColorHelper.getRedFloat(horizonColor), ColorHelper.getGreenFloat(horizonColor),
-            ColorHelper.getBlueFloat(horizonColor), ColorHelper.getAlphaFloat(horizonColor), sunDirection,
-            dimensionEffects.getSkyType().ordinal(), dimensionEffects.isSunRisingOrSetting(skyAngle),
-            this.isSkyDark(tickDelta), hasBlindnessOrDarkness, submersionType, moonPhase,
-            rainGradient, sunTextureID, moonTextureID);
-
+        radiance$logCameraBridge(camera);
+        ChunkProxy.setStorage(this.viewArea);
+        radiance$updateWorldUniform(camera);
+        radiance$updateSkyUniform(this.levelRenderState == null ? null : this.levelRenderState.skyRenderState,
+            camera, tickCounter);
+        TextureUploadReplay.replayAll();
         BufferProxy.updateMapping();
+        ChunkProxy.rebuild(Minecraft.getInstance().gameRenderer.mainCamera());
+    }
 
-        // Entities
-        EntityProxy.queueEntitiesBuild(camera, renderedEntities, this.entityRenderDispatcher,
-            tickCounter, canDrawEntityOutlines());
-
-        Pair<List<StorageVertexConsumerProvider>, EntityProxy.EntityRenderDataList> crumblingRenderData = EntityProxy.queueBlockEntitiesRebuild(
-            chunks, this.noCullingBlockEntities, blockBreakingProgressions,
-            blockEntityRenderDispatcher, tickDelta);
-        EntityProxy.queueCrumblingRebuild(camera, blockBreakingProgressions,
-            this.client.getBlockRenderManager(), this.world, crumblingRenderData.getLeft(),
-            crumblingRenderData.getRight());
-
-        EntityProxy.queueParticleRebuild(camera, tickDelta, frustum);
-
-        if (renderBlockOutline) {
-            EntityProxy.queueTargetBlockOutlineRebuild(camera, world);
+    @Unique
+    private static void radiance$logCameraBridge(CameraRenderState camera) {
+        if (radiance$loggedCameraBridge || !RendererAvailability.isRendererLifecycleActive()
+            || camera == null) {
+            return;
         }
 
-        EntityProxy.queueWeatherBuild(this.weatherRendering, this.worldBorderRendering, this.world,
-            camera, this.ticks, tickDelta);
+        Minecraft minecraft = Minecraft.getInstance();
+        var mainCamera = minecraft.gameRenderer == null ? null : minecraft.gameRenderer.mainCamera();
+        RadianceClient.LOGGER.info(
+            "Radiance camera bridge: statePos={}, stateBlock={}, mainCameraPos={}, mainCameraBlock={}, xRot={}, yRot={}",
+            camera.pos, camera.blockPos,
+            mainCamera == null ? null : mainCamera.position(),
+            mainCamera == null ? null : mainCamera.blockPosition(),
+            camera.xRot, camera.yRot);
+        radiance$loggedCameraBridge = true;
+    }
 
-        // clouds
-        CloudRenderMode cloudRenderMode = this.client.options.getCloudRenderModeValue();
-        if (cloudRenderMode != CloudRenderMode.OFF) {
-            float k = this.world.getDimensionEffects().getCloudsHeight();
-            if (!Float.isNaN(k)) {
-                float ticks = (float) this.ticks + f;
-                int color = this.world.getCloudsColor(f);
-                float cloudHeight = k + 0.33F;
-                this.cloudRenderer.renderClouds(color, cloudRenderMode, cloudHeight, null, null,
-                    camera.getPos(), ticks);
-            }
+    @Unique
+    private static void radiance$updateWorldUniform(CameraRenderState camera) {
+        if (!RendererAvailability.isRendererLifecycleActive() || camera == null) {
+            return;
         }
 
-        // Chunks
-        ChunkProxy.setStorage(chunks);
-        ChunkProxy.rebuild(camera);
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null || minecraft.gameRenderer == null
+            || minecraft.gameRenderer.mainCamera() == null) {
+            return;
+        }
 
-        this.renderedEntities.clear();
+        Matrix4f viewMatrix = camera.viewRotationMatrix == null
+            ? new Matrix4f()
+            : new Matrix4f(camera.viewRotationMatrix);
+        Matrix4f effectedViewMatrix = new Matrix4f(viewMatrix);
+        Matrix4f projectionMatrix = radiance$projectionMatrix(camera, minecraft);
+        radiance$logMatrixBridge(camera, effectedViewMatrix, projectionMatrix);
 
-        ci.cancel();
-    }
-    // endregion
+        BufferProxy.updateWorldUniform(minecraft.gameRenderer.mainCamera(), viewMatrix,
+            effectedViewMatrix, projectionMatrix, radiance$getOverlayTextureId(minecraft),
+            camera.fogData, minecraft.level,
+            TextureResourceBridge.optionalTextureId(TextureResourceBridge.END_SKY_TEXTURE),
+            TextureResourceBridge.optionalTextureId(TextureResourceBridge.END_PORTAL_TEXTURE),
+            radiance$getLevelLightmapTextureId(minecraft));
 
-    // region <setWorld>
-    @Redirect(method = "setWorld(Lnet/minecraft/client/world/ClientWorld;)V", at = @At(value = "INVOKE", target =
-        "Lnet/minecraft/client/render/ChunkRenderingDataPreparer;setStorage"
-            + "(Lnet/minecraft/client/render/BuiltChunkStorage;)V"))
-    public void cancelSetWorldChunkRenderingDataPreparerSetStorage(
-        ChunkRenderingDataPreparer instance, BuiltChunkStorage storage) {
-
-    }
-    // endregion
-
-    //region <setupTerrain>
-    @Inject(method = "setupTerrain(Lnet/minecraft/client/render/Camera;Lnet/minecraft/client/render/Frustum;ZZ)V", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/render/chunk/ChunkBuilder;setCameraPosition(Lnet/minecraft/util/math/Vec3d;)V", shift = At.Shift.AFTER), cancellable = true)
-    public void cancelCullAndUpdateWithChunkRenderingDataPreparer(Camera camera, Frustum frustum,
-        boolean hasForcedFrustum, boolean spectator, CallbackInfo ci, @Local Profiler profiler) {
-//        PlayerProxy.setCameraPos(camera.getPos());
-        profiler.pop();
-        ci.cancel();
-    }
-    //endregion
-
-    // region <addBuiltChunk>
-    @Redirect(method = "addBuiltChunk(Lnet/minecraft/client/render/chunk/ChunkBuilder$BuiltChunk;)V", at = @At(value = "INVOKE", target =
-        "Lnet/minecraft/client/render/ChunkRenderingDataPreparer;schedulePropagationFrom"
-            + "(Lnet/minecraft/client/render/chunk/ChunkBuilder$BuiltChunk;)V"))
-    public void cancelPropagateWithChunkRenderingDataPreparer(ChunkRenderingDataPreparer instance,
-        ChunkBuilder.BuiltChunk builtChunk) {
-
-    }
-    // endregion
-
-    // region <onChunkUnload>
-    @Redirect(method = "onChunkUnload(J)V", at = @At(value = "INVOKE", target =
-        "Lnet/minecraft/client/render/ChunkRenderingDataPreparer;schedulePropagationFrom"
-            + "(Lnet/minecraft/client/render/chunk/ChunkBuilder$BuiltChunk;)V"))
-    public void cancelPropagateUnloadWithChunkRenderingDataPreparer(
-        ChunkRenderingDataPreparer instance, ChunkBuilder.BuiltChunk builtChunk) {
-
-    }
-    // endregion
-
-    // region <scheduleNeighborUpdates>
-    @Redirect(method = "scheduleNeighborUpdates(Lnet/minecraft/util/math/ChunkPos;)V", at = @At(value = "INVOKE", target =
-        "Lnet/minecraft/client/render/ChunkRenderingDataPreparer;addNeighbors(Lnet/minecraft/util/math/ChunkPos;)"
-            + "V"))
-    public void cancelNeighborUpdatesWithChunkRenderingDataPreparer(
-        ChunkRenderingDataPreparer instance, ChunkPos chunkPos) {
-
-    }
-    // endregion
-
-    // region <isRenderingReady>
-    @Inject(method = "isRenderingReady(Lnet/minecraft/util/math/BlockPos;)Z", at = @At(value = "HEAD"), cancellable = true)
-    public void redirectIsRenderingReady(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
-        ChunkBuilder.BuiltChunk builtChunk = chunks.getRenderedChunk(pos);
-
-        if (builtChunk == null) {
-            cir.setReturnValue(false);
-        } else if (builtChunk.data.get().isEmpty(null)) {
-            cir.setReturnValue(true);
-        } else if (builtChunk.data.get() == ChunkProxy.PROCESSED) {
-            cir.setReturnValue(ChunkProxy.isChunkReady(builtChunk));
+        if (!radiance$loggedWorldUniformBridge) {
+            radiance$loggedWorldUniformBridge = true;
+            RadianceClient.LOGGER.info(
+                "Radiance world uniform bridge: using 26.2 CameraRenderState projection/view/fog path");
         }
     }
-    // endregion
 
-    // region <>
-    @Inject(method = "getCompletedChunkCount()I", at = @At(value = "HEAD"), cancellable = true)
-    public void fixGetCompletedChunkCount(CallbackInfoReturnable<Integer> cir) {
-        cir.setReturnValue(ChunkProxy.builtChunkNum - 54); // 54 + 10 = 64
+    @Unique
+    private static Matrix4f radiance$projectionMatrix(CameraRenderState camera, Minecraft minecraft) {
+        Matrix4f projectionMatrix = camera.projectionMatrix == null
+            ? new Matrix4f()
+            : new Matrix4f(camera.projectionMatrix);
+        if (radiance$isUsableProjection(projectionMatrix)) {
+            return projectionMatrix;
+        }
+
+        int width = minecraft.getWindow() == null ? 0 : minecraft.getWindow().getWidth();
+        int height = minecraft.getWindow() == null ? 0 : minecraft.getWindow().getHeight();
+        float aspect = width > 0 && height > 0 ? (float) width / (float) height : 16.0F / 9.0F;
+        float fov = Float.isFinite(camera.hudFov) && camera.hudFov >= 30.0F
+            && camera.hudFov <= 120.0F ? camera.hudFov : 70.0F;
+        float far = Float.isFinite(camera.depthFar) && camera.depthFar >= 16.0F
+            ? camera.depthFar : 1000.0F;
+        Matrix4f fallback = new Matrix4f().setPerspective((float) Math.toRadians(fov), aspect,
+            0.05F, far);
+        Matrix4f radianceProjection = radiance$isNativeClipMapForced()
+            ? fallback
+            : radiance$mapGlToVulkanClip(fallback);
+
+        if (!radiance$loggedProjectionFallback) {
+            radiance$loggedProjectionFallback = true;
+            RadianceClient.LOGGER.info(
+                "Radiance world projection bridge: replaced unusable 26.2 projection with fallback fov={}, aspect={}, near=0.05, far={}, vulkanClipMapped={}",
+                fov, aspect, far, !radiance$isNativeClipMapForced());
+        }
+        return radianceProjection;
     }
-    // endregion
+
+    @Unique
+    private static Matrix4f radiance$mapGlToVulkanClip(Matrix4f projection) {
+        Matrix4f map = new Matrix4f();
+        map.m11(-1.0F);
+        map.m22(0.5F);
+        map.m32(0.5F);
+        return map.mul(projection, new Matrix4f());
+    }
+
+    @Unique
+    private static boolean radiance$isNativeClipMapForced() {
+        return System.getenv("RADIANCE_FORCE_PROJECTION_CLIP_MAP") != null;
+    }
+
+    @Unique
+    private static boolean radiance$isUsableProjection(Matrix4f matrix) {
+        float xScale = Math.abs(matrix.m00());
+        float yScale = Math.abs(matrix.m11());
+        return Float.isFinite(xScale) && Float.isFinite(yScale)
+            && Float.isFinite(matrix.m22()) && Float.isFinite(matrix.m23())
+            && Float.isFinite(matrix.m32()) && xScale > 0.05F && yScale > 0.05F
+            && xScale < 8.0F && yScale < 8.0F;
+    }
+
+    @Unique
+    private static void radiance$logMatrixBridge(CameraRenderState camera, Matrix4f viewMatrix,
+        Matrix4f projectionMatrix) {
+        if (radiance$loggedMatrixBridge) {
+            return;
+        }
+
+        Matrix4f inverseView = new Matrix4f(viewMatrix).invert();
+        Matrix4f inverseProjection = new Matrix4f(projectionMatrix).invert();
+        Vector4f centerNear = new Vector4f(0.0F, 0.0F, 0.0F, 1.0F);
+        inverseProjection.transform(centerNear);
+        if (centerNear.w() != 0.0F) {
+            centerNear.div(centerNear.w());
+        }
+
+        Vector3f rayOrigin = inverseView.transformPosition(new Vector3f(0.0F, 0.0F, 0.0F));
+        Vector3f centerRay = inverseView.transformDirection(
+            new Vector3f(centerNear.x(), centerNear.y(), centerNear.z()));
+        if (centerRay.lengthSquared() > 0.0F) {
+            centerRay.normalize();
+        }
+
+        RadianceClient.LOGGER.info(
+            "Radiance world matrix bridge: cameraPos={}, shaderOrigin={}, centerRay={}, viewTranslation=({}, {}, {}), projection00={}, projection11={}",
+            camera.pos, rayOrigin, centerRay, viewMatrix.m30(), viewMatrix.m31(),
+            viewMatrix.m32(), projectionMatrix.m00(), projectionMatrix.m11());
+        radiance$loggedMatrixBridge = true;
+    }
+
+    @Unique
+    private static int radiance$getOverlayTextureId(Minecraft minecraft) {
+        GpuTextureView view = minecraft.gameRenderer.overlayTexture().getTextureView();
+        if (view == null || view.texture() == null || view.isClosed()) {
+            return 0;
+        }
+        return TextureTracker.registerLightmapTexture(view.texture());
+    }
+
+    @Unique
+    private static int radiance$getLevelLightmapTextureId(Minecraft minecraft) {
+        GpuTextureView view = minecraft.gameRenderer.levelLightmap();
+        if (view == null || view.texture() == null || view.isClosed()) {
+            return 0;
+        }
+        return TextureTracker.registerLightmapTexture(view.texture());
+    }
+
+    @Unique
+    private static void radiance$updateSkyUniform(SkyRenderState sky, CameraRenderState camera,
+        DeltaTracker tickCounter) {
+        if (!RendererAvailability.isRendererLifecycleActive() || sky == null
+            || sky.skybox == DimensionType.Skybox.NONE) {
+            return;
+        }
+
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null) {
+            return;
+        }
+
+        int skyColor = sky.skyColor;
+        int horizonColor = sky.sunriseAndSunsetColor;
+        boolean sunRisingOrSetting = ARGB.alphaFloat(horizonColor) > 0.001F;
+        float rainGradient = Math.max(0.0F, Math.min(1.0F, 1.0F - sky.rainBrightness));
+        int submersionType = radiance$legacySubmersionType(camera);
+        int moonPhase = sky.moonPhase == null ? 0 : sky.moonPhase.index();
+
+        BufferProxy.updateSkyUniform(ARGB.redFloat(skyColor), ARGB.greenFloat(skyColor),
+            ARGB.blueFloat(skyColor), ARGB.redFloat(horizonColor), ARGB.greenFloat(horizonColor),
+            ARGB.blueFloat(horizonColor), ARGB.alphaFloat(horizonColor),
+            radiance$sunDirection(sky.sunAngle), sky.skybox.ordinal(), sunRisingOrSetting,
+            minecraft.level.isDarkOutside(), false, submersionType, moonPhase, rainGradient,
+            TextureResourceBridge.textureId(TextureResourceBridge.SUN_TEXTURE),
+            TextureResourceBridge.moonAtlasTextureId());
+
+        if (!radiance$loggedSkyUniformBridge) {
+            radiance$loggedSkyUniformBridge = true;
+            RadianceClient.LOGGER.info(
+                "Radiance sky uniform bridge: using 26.2 SkyRenderState sun/moon/skybox path; skyType={}, fogType={}, legacySubmersionType={}, rainGradient={}, skyDark={}, sunDirection={}",
+                sky.skybox.ordinal(), camera == null ? null : camera.fogType, submersionType,
+                rainGradient, minecraft.level.isDarkOutside(), radiance$sunDirection(sky.sunAngle));
+        }
+    }
+
+    @Unique
+    private static int radiance$legacySubmersionType(CameraRenderState camera) {
+        if (camera == null || camera.fogType == null) {
+            return 3;
+        }
+
+        FogType fogType = camera.fogType;
+        if (fogType == FogType.LAVA) {
+            return 0;
+        }
+        if (fogType == FogType.WATER) {
+            return 1;
+        }
+        if (fogType == FogType.POWDER_SNOW) {
+            return 2;
+        }
+        return 3;
+    }
+
+    @Unique
+    private static Vector3f radiance$sunDirection(float sunAngle) {
+        return new Vector3f(0.0F, 1.0F, 0.0F)
+            .rotateX(sunAngle)
+            .rotateY((float) Math.toRadians(-90.0F))
+            .normalize();
+    }
 }

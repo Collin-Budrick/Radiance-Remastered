@@ -8,13 +8,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.ClickableWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.network.chat.Component;
 
 public class ShaderPackSettingsScreen extends Screen {
 
@@ -35,15 +35,15 @@ public class ShaderPackSettingsScreen extends Screen {
     private int scrollY = 0;
 
     public ShaderPackSettingsScreen(Screen parent) {
-        super(Text.translatable(TITLE));
+        super(Component.translatable(TITLE));
         this.parent = parent;
     }
 
     @Override
     protected void init() {
-        addDrawableChild(
-            ButtonWidget.builder(Text.translatable("Back"), button -> close())
-                .dimensions(10, 6, 60, 20)
+        addRenderableWidget(
+            Button.builder(Component.translatable("Back"), button -> onClose())
+                .bounds(10, 6, 60, 20)
                 .build());
 
         rows.clear();
@@ -54,33 +54,33 @@ public class ShaderPackSettingsScreen extends Screen {
         }
 
         for (AttributeConfig cfg : list) {
-            List<ClickableWidget> ws = AttributeWidgetUtil.buildWidgets(module, cfg, textRenderer,
+            List<AbstractWidget> ws = AttributeWidgetUtil.buildWidgets(module, cfg, this.font,
                 WIDGET_WIDTH, VEC3_COMPONENT_WIDTH);
-            for (ClickableWidget w : ws) {
-                addDrawableChild(w);
+            for (AbstractWidget w : ws) {
+                addRenderableWidget(w);
             }
             rows.add(new Row(cfg, ws));
         }
     }
 
     @Override
-    public void close() {
+    public void onClose() {
         if (module != null) {
             Pipeline.getModuleAttributes(module);
             Pipeline.savePipeline();
         }
-        MinecraftClient.getInstance().setScreen(parent);
+        Minecraft.getInstance().setScreenAndShow(parent);
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        super.render(context, mouseX, mouseY, delta);
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(context, mouseX, mouseY, delta);
 
-        context.drawTextWithShadow(textRenderer, Text.translatable(TITLE), 10, HEADER_HEIGHT + 8,
+        context.text(this.font, Component.translatable(TITLE), 10, HEADER_HEIGHT + 8,
             0xFFEAEAEA);
 
         if (rows.isEmpty()) {
-            context.drawTextWithShadow(textRenderer, Text.translatable(NO_ATTRIBUTES), 10, 60,
+            context.text(this.font, Component.translatable(NO_ATTRIBUTES), 10, 60,
                 0xFFB0B0B0);
             return;
         }
@@ -93,7 +93,7 @@ public class ShaderPackSettingsScreen extends Screen {
             int y = baseY + i * rowH;
             boolean visible = y >= (HEADER_HEIGHT + 18) && y <= (this.height - 24);
             if (visible) {
-                context.drawTextWithShadow(textRenderer, module.translateText(row.cfg.name), ROW_LEFT,
+                context.text(this.font, module.translateText(row.cfg.name), ROW_LEFT,
                     y + 6, 0xFFD0D0D0);
             }
 
@@ -101,7 +101,7 @@ public class ShaderPackSettingsScreen extends Screen {
             String type = row.cfg.type == null ? "" : row.cfg.type.toLowerCase(Locale.ROOT);
             boolean doBorder = AttributeWidgetUtil.shouldValidateBorder(type);
 
-            for (ClickableWidget w : row.widgets) {
+            for (AbstractWidget w : row.widgets) {
                 w.visible = visible;
                 w.active = visible;
 
@@ -111,20 +111,20 @@ public class ShaderPackSettingsScreen extends Screen {
 
                 boolean ok = true;
                 if (type.equals("vec3")) {
-                    if (w instanceof TextFieldWidget tf) {
-                        ok = AttributeWidgetUtil.isStrictFloat(tf.getText());
+                    if (w instanceof EditBox tf) {
+                        ok = AttributeWidgetUtil.isStrictFloat(tf.getValue());
                     }
                 } else if (type.equals("int")) {
-                    if (w instanceof TextFieldWidget tf) {
-                        ok = AttributeWidgetUtil.isStrictInt(tf.getText());
+                    if (w instanceof EditBox tf) {
+                        ok = AttributeWidgetUtil.isStrictInt(tf.getValue());
                     }
                 } else if (type.equals("float")) {
-                    if (w instanceof TextFieldWidget tf) {
-                        ok = AttributeWidgetUtil.isStrictFloat(tf.getText());
+                    if (w instanceof EditBox tf) {
+                        ok = AttributeWidgetUtil.isStrictFloat(tf.getValue());
                     }
                 }
 
-                if (w instanceof TextFieldWidget tf) {
+                if (w instanceof EditBox tf) {
                     int c = ok ? OK_BORDER : BAD_BORDER;
                     AttributeWidgetUtil.drawBorder(context, tf.getX(), tf.getY(), tf.getWidth(),
                         tf.getHeight(), c);
@@ -161,6 +161,6 @@ public class ShaderPackSettingsScreen extends Screen {
         return true;
     }
 
-    private record Row(AttributeConfig cfg, List<ClickableWidget> widgets) {
+    private record Row(AttributeConfig cfg, List<AbstractWidget> widgets) {
     }
 }

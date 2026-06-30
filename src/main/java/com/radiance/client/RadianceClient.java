@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 import net.fabricmc.api.ClientModInitializer;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 import org.slf4j.Logger;
 
 public class RadianceClient implements ClientModInitializer {
@@ -32,8 +32,12 @@ public class RadianceClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        Path mcBaseDir = mc.runDirectory.toPath();
+        RendererAvailability.ensureRendererAvailableIfRequired();
+        LOGGER.info("Radiance renderer availability: required={}, packagedResources={}",
+            RendererAvailability.isRendererRequired(),
+            RendererAvailability.hasPackagedRendererResources());
+        Minecraft mc = Minecraft.getInstance();
+        Path mcBaseDir = mc.gameDirectory.toPath();
         radianceDir = mcBaseDir.resolve("radiance");
         try {
             Files.createDirectories(radianceDir);
@@ -41,16 +45,20 @@ public class RadianceClient implements ClientModInitializer {
             throw new RuntimeException(e);
         }
 
+        boolean rendererResourcesPackaged = RendererAvailability.hasPackagedRendererResources()
+            && RendererAvailability.isRendererRequired();
+        boolean nativeRendererLoaded = false;
+
         // core lib
         String osName = System.getProperty("os.name");
         if (osName.toLowerCase().contains("windows")) {
             Path libTargetPath = radianceDir.resolve("core.lib");
             Path libResourcePath = Path.of("core.lib");
-            copyFileFromResource(libTargetPath, libResourcePath);
+            copyOptionalFileFromResource(libTargetPath, libResourcePath);
 
             Path dllTargetPath = radianceDir.resolve("core.dll");
             Path dllResourcePath = Path.of("core.dll");
-            copyFileFromResource(dllTargetPath, dllResourcePath);
+            boolean copiedCoreDll = copyOptionalFileFromResource(dllTargetPath, dllResourcePath);
             Path xessPath = radianceDir.resolve("libxess.dll");
             Path xessDx11Path = radianceDir.resolve("libxess_dx11.dll");
             Path xessFgPath = radianceDir.resolve("libxess_fg.dll");
@@ -61,13 +69,25 @@ public class RadianceClient implements ClientModInitializer {
 
             loadOptionalLibrary(xessPath);
 
-            System.load(dllTargetPath.toAbsolutePath().toString());
+            if (rendererResourcesPackaged && (copiedCoreDll || Files.exists(dllTargetPath))) {
+                loadNativeRenderer(dllTargetPath);
+                nativeRendererLoaded = true;
+                RendererAvailability.markNativeRendererLoaded(dllTargetPath);
+            } else {
+                LOGGER.warn("Radiance native renderer resources are not packaged; continuing with renderer mixins disabled");
+            }
         } else if (osName.toLowerCase().contains("linux")) {
             Path soTargetPath = radianceDir.resolve("libcore.so");
             Path soResourcePath = Path.of("libcore.so");
-            copyFileFromResource(soTargetPath, soResourcePath);
+            boolean copiedCoreSo = copyOptionalFileFromResource(soTargetPath, soResourcePath);
 
-            System.load(soTargetPath.toAbsolutePath().toString());
+            if (rendererResourcesPackaged && (copiedCoreSo || Files.exists(soTargetPath))) {
+                loadNativeRenderer(soTargetPath);
+                nativeRendererLoaded = true;
+                RendererAvailability.markNativeRendererLoaded(soTargetPath);
+            } else {
+                LOGGER.warn("Radiance native renderer resources are not packaged; continuing with renderer mixins disabled");
+            }
         } else {
             throw new RuntimeException("The OS " + osName + " is not supported");
         }
@@ -75,19 +95,30 @@ public class RadianceClient implements ClientModInitializer {
         // shaders
         Path shaderTargetPath = radianceDir.resolve("shaders");
         Path shaderResourcePath = Path.of("shaders");
-        copyFolderFromResource(shaderTargetPath, shaderResourcePath);
+        copyOptionalFolderFromResource(shaderTargetPath, shaderResourcePath);
+        RendererAvailability.markShaderResourcesStaged(shaderTargetPath,
+            Files.isDirectory(shaderTargetPath));
 
         // modules
         Path moduleTargetPath = radianceDir.resolve("modules");
         Path moduleResourcePath = Path.of("modules");
         copyFolderFromResource(moduleTargetPath, moduleResourcePath);
 
-        RendererProxy.initFolderPath(radianceDir.toAbsolutePath().toString());
         Pipeline.initFolderPath(radianceDir);
+        if (!nativeRendererLoaded) {
+            LOGGER.warn("Radiance native renderer is disabled; skipping native renderer initialization");
+            return;
+        }
 
+        RendererProxy.initFolderPath(radianceDir.toAbsolutePath().toString());
+        LOGGER.info("Radiance native renderer folder path set to {}",
+            radianceDir.toAbsolutePath());
         Options.readOptions();
+        LOGGER.info("Radiance options loaded");
 
         Pipeline.reloadAllModuleEntries();
+        LOGGER.info("Radiance module entries loaded: {}",
+            Pipeline.getModuleEntryCount());
     }
 
     public void copyFileFromResource(Path targetPath, Path resourcePath) {
@@ -103,14 +134,15 @@ public class RadianceClient implements ClientModInitializer {
         }
     }
 
-    public void copyOptionalFileFromResource(Path targetPath, Path resourcePath) {
+    public boolean copyOptionalFileFromResource(Path targetPath, Path resourcePath) {
         try (InputStream is = getClass().getResourceAsStream(toResourcePath(resourcePath))) {
             if (is == null) {
-                return;
+                return false;
             }
 
             Files.createDirectories(targetPath.getParent());
             Files.copy(is, targetPath, StandardCopyOption.REPLACE_EXISTING);
+            return true;
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -119,6 +151,17 @@ public class RadianceClient implements ClientModInitializer {
     public void loadOptionalLibrary(Path path) {
         if (Files.exists(path)) {
             System.load(path.toAbsolutePath().toString());
+        }
+    }
+
+    public void loadNativeRenderer(Path path) {
+        try {
+            System.load(path.toAbsolutePath().toString());
+        } catch (UnsatisfiedLinkError e) {
+            throw new RuntimeException(
+                "Failed to load Radiance native renderer from " + path.toAbsolutePath()
+                    + ". Verify the MCVR native renderer and runtime dependencies are installed.",
+                e);
         }
     }
 
@@ -171,6 +214,15 @@ public class RadianceClient implements ClientModInitializer {
         } catch (URISyntaxException | IOException e) {
             throw new RuntimeException("Failed to copy resource folder", e);
         }
+    }
+
+    public void copyOptionalFolderFromResource(Path targetPath, Path resourcePath) {
+        String resourcePathStr = toResourcePath(resourcePath);
+        if (getClass().getResource(resourcePathStr) == null) {
+            LOGGER.warn("Radiance resource folder {} is not packaged; skipping copy", resourcePathStr);
+            return;
+        }
+        copyFolderFromResource(targetPath, resourcePath);
     }
 
     private void walkAndCopy(Path walkRoot, Path targetRoot, Path baseResourcePath)

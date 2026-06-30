@@ -1,15 +1,16 @@
 package com.radiance.client.gui;
 
 import com.radiance.client.pipeline.Pipeline;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.AlwaysSelectedEntryListWidget;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.text.MutableText;
-import net.minecraft.text.Style;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.components.ObjectSelectionList;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.Component;
+import net.minecraft.ChatFormatting;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,7 +33,7 @@ public class ShaderPackScreen extends Screen {
     private ShaderPackListWidget shaderPackList;
 
     public ShaderPackScreen(Screen parent) {
-        super(Text.translatable(TITLE));
+        super(Component.translatable(TITLE));
         this.parent = parent;
     }
 
@@ -42,75 +43,73 @@ public class ShaderPackScreen extends Screen {
         entries.addAll(Pipeline.getAvailableShaderPacks());
 
         int listHeight = this.height - LIST_TOP - FOOTER_HEIGHT;
-        shaderPackList = addDrawableChild(new ShaderPackListWidget(this.client, this.width, listHeight, LIST_TOP, ROW_HEIGHT));
+        shaderPackList = addRenderableWidget(new ShaderPackListWidget(this.minecraft, this.width, listHeight, LIST_TOP, ROW_HEIGHT));
 
         int footerY = this.height - 28;
         int footerX = (this.width - (FOOTER_BUTTON_WIDTH * 2 + FOOTER_BUTTON_GAP)) / 2;
 
-        addDrawableChild(ButtonWidget.builder(Text.translatable(BACK), button -> close())
-            .dimensions(footerX, footerY, FOOTER_BUTTON_WIDTH, 20)
+        addRenderableWidget(Button.builder(Component.translatable(BACK), button -> onClose())
+            .bounds(footerX, footerY, FOOTER_BUTTON_WIDTH, 20)
             .build());
 
-        addDrawableChild(ButtonWidget.builder(Text.translatable(SHADER_SETTINGS),
-                button -> MinecraftClient.getInstance().setScreen(new ShaderPackSettingsScreen(this)))
-            .dimensions(footerX + FOOTER_BUTTON_WIDTH + FOOTER_BUTTON_GAP, footerY, FOOTER_BUTTON_WIDTH, 20)
+        addRenderableWidget(Button.builder(Component.translatable(SHADER_SETTINGS),
+                button -> Minecraft.getInstance().setScreenAndShow(new ShaderPackSettingsScreen(this)))
+            .bounds(footerX + FOOTER_BUTTON_WIDTH + FOOTER_BUTTON_GAP, footerY, FOOTER_BUTTON_WIDTH, 20)
             .build());
     }
 
     @Override
-    public void close() {
-        MinecraftClient.getInstance().setScreen(parent);
+    public void onClose() {
+        Minecraft.getInstance().setScreenAndShow(parent);
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        this.renderBackground(context, mouseX, mouseY, delta);
-        super.render(context, mouseX, mouseY, delta);
-        context.drawCenteredTextWithShadow(textRenderer, Text.translatable(TITLE), this.width / 2, 16, 0xFFFFFF);
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        this.extractBackground(context, mouseX, mouseY, delta);
+        super.extractRenderState(context, mouseX, mouseY, delta);
+        context.centeredText(this.font, Component.translatable(TITLE), this.width / 2, 16, 0xFFFFFF);
 
-        Text hoveredTooltip = shaderPackList == null ? null : shaderPackList.getHoveredTooltip();
+        Component hoveredTooltip = shaderPackList == null ? null : shaderPackList.getHoveredTooltip();
         if (hoveredTooltip != null) {
-            context.drawTooltip(this.textRenderer, hoveredTooltip, mouseX, mouseY);
+            context.setTooltipForNextFrame(this.font, hoveredTooltip, mouseX, mouseY);
         }
 
         if (entries.isEmpty()) {
-            context.drawCenteredTextWithShadow(textRenderer, Text.translatable(EMPTY), this.width / 2, LIST_TOP + 10, 0xB0B0B0);
+            context.centeredText(this.font, Component.translatable(EMPTY), this.width / 2, LIST_TOP + 10, 0xB0B0B0);
         }
     }
 
-    private Text buildLabel(Pipeline.ShaderPackChoice choice) {
-        Text label = parseLegacyFormattedText(choice.displayName());
+    private Component buildLabel(Pipeline.ShaderPackChoice choice) {
+        Component label = parseLegacyFormattedText(choice.displayName());
         if (Pipeline.isShaderPackActive(choice)) {
-            label = Text.literal("> ").append(label);
+            label = Component.literal("> ").append(label);
         }
         return label;
     }
 
-    private Text parseLegacyFormattedText(String raw) {
+    private Component parseLegacyFormattedText(String raw) {
         if (raw == null || raw.isEmpty()) {
-            return Text.empty();
+            return Component.empty();
         }
 
-        MutableText result = Text.empty();
+        MutableComponent result = Component.empty();
         Style style = Style.EMPTY;
         StringBuilder segment = new StringBuilder();
 
         for (int i = 0; i < raw.length(); i++) {
             char current = raw.charAt(i);
-            if (current == Formatting.FORMATTING_CODE_PREFIX && i + 1 < raw.length()) {
-                Formatting formatting = Formatting.byCode(raw.charAt(i + 1));
+            if (current == ChatFormatting.PREFIX_CODE && i + 1 < raw.length()) {
+                ChatFormatting formatting = ChatFormatting.getByCode(raw.charAt(i + 1));
                 if (formatting != null) {
                     if (segment.length() > 0) {
-                        result.append(Text.literal(segment.toString()).setStyle(style));
+                        result.append(Component.literal(segment.toString()).setStyle(style));
                         segment.setLength(0);
                     }
 
-                    if (formatting == Formatting.RESET) {
+                    if (formatting == ChatFormatting.RESET) {
                         style = Style.EMPTY;
-                    } else if (formatting.isColor()) {
-                        style = style.withExclusiveFormatting(formatting);
                     } else {
-                        style = style.withFormatting(formatting);
+                        style = style.applyLegacyFormat(formatting);
                     }
                     i++;
                     continue;
@@ -120,14 +119,14 @@ public class ShaderPackScreen extends Screen {
         }
 
         if (segment.length() > 0) {
-            result.append(Text.literal(segment.toString()).setStyle(style));
+            result.append(Component.literal(segment.toString()).setStyle(style));
         }
 
         return result;
     }
 
-    class ShaderPackListWidget extends AlwaysSelectedEntryListWidget<ShaderPackListWidget.ShaderPackEntry> {
-        ShaderPackListWidget(MinecraftClient client, int width, int height, int y, int itemHeight) {
+    class ShaderPackListWidget extends ObjectSelectionList<ShaderPackListWidget.ShaderPackEntry> {
+        ShaderPackListWidget(Minecraft client, int width, int height, int y, int itemHeight) {
             super(client, width, height, y, itemHeight);
             this.centerListVertically = false;
 
@@ -139,8 +138,8 @@ public class ShaderPackScreen extends Screen {
                 }
             }
 
-            if (this.getSelectedOrNull() != null) {
-                this.centerScrollOn(this.getSelectedOrNull());
+            if (this.getSelected() != null) {
+                this.centerScrollOn(this.getSelected());
             }
         }
 
@@ -158,7 +157,7 @@ public class ShaderPackScreen extends Screen {
         }
 
         @Override
-        public void setFocused(net.minecraft.client.gui.Element focused) {
+        public void setFocused(net.minecraft.client.gui.components.events.GuiEventListener focused) {
             if (focused instanceof ShaderPackEntry entry && !Pipeline.isShaderPackSelectable(entry.choice)) {
                 return;
             }
@@ -166,20 +165,20 @@ public class ShaderPackScreen extends Screen {
         }
 
         @Override
-        public boolean mouseClicked(double mouseX, double mouseY, int button) {
-            ShaderPackEntry entry = this.getEntryAtPosition(mouseX, mouseY);
+        public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+            ShaderPackEntry entry = this.getEntryAtPosition(event.x(), event.y());
             if (entry != null && !Pipeline.isShaderPackSelectable(entry.choice)) {
                 return true;
             }
-            return super.mouseClicked(mouseX, mouseY, button);
+            return super.mouseClicked(event, doubleClick);
         }
 
-        private Text getHoveredTooltip() {
-            ShaderPackEntry entry = this.getHoveredEntry();
+        private Component getHoveredTooltip() {
+            ShaderPackEntry entry = this.getHovered();
             return entry == null ? null : entry.getUnavailableReason();
         }
 
-        class ShaderPackEntry extends AlwaysSelectedEntryListWidget.Entry<ShaderPackEntry> {
+        class ShaderPackEntry extends ObjectSelectionList.Entry<ShaderPackEntry> {
             private final Pipeline.ShaderPackChoice choice;
 
             ShaderPackEntry(Pipeline.ShaderPackChoice choice) {
@@ -187,44 +186,36 @@ public class ShaderPackScreen extends Screen {
             }
 
             @Override
-            public void render(DrawContext context,
-                               int index,
-                               int y,
-                               int x,
-                               int entryWidth,
-                               int entryHeight,
-                               int mouseX,
-                               int mouseY,
-                               boolean hovered,
-                               float tickDelta) {
+            public void extractContent(GuiGraphicsExtractor context, int mouseX, int mouseY,
+                boolean hovered, float tickDelta) {
                 int textColor = Pipeline.isShaderPackSelectable(this.choice) ? 0xFFFFFF : 0x9A9A9A;
-                context.drawCenteredTextWithShadow(
-                    ShaderPackScreen.this.textRenderer,
+                context.centeredText(
+                    ShaderPackScreen.this.font,
                     ShaderPackScreen.this.buildLabel(this.choice),
                     ShaderPackListWidget.this.width / 2,
-                    y + entryHeight / 2 - 9 / 2,
+                    this.getContentYMiddle() - 9 / 2,
                     textColor
                 );
             }
 
-            private Text getUnavailableReason() {
+            private Component getUnavailableReason() {
                 String translationKey = Pipeline.getShaderPackUnavailabilityReasonTranslationKey(this.choice);
-                return translationKey == null ? null : Text.translatable(translationKey);
+                return translationKey == null ? null : Component.translatable(translationKey);
             }
 
             @Override
-            public boolean mouseClicked(double mouseX, double mouseY, int button) {
+            public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
                 if (!Pipeline.isShaderPackSelectable(this.choice)) {
                     return true;
                 }
                 ShaderPackListWidget.this.setSelected(this);
                 Pipeline.setShaderPack(this.choice, false);
-                return super.mouseClicked(mouseX, mouseY, button);
+                return super.mouseClicked(event, doubleClick);
             }
 
             @Override
-            public Text getNarration() {
-                return Text.translatable("narrator.select", ShaderPackScreen.this.buildLabel(this.choice));
+            public Component getNarration() {
+                return Component.translatable("narrator.select", ShaderPackScreen.this.buildLabel(this.choice));
             }
         }
     }

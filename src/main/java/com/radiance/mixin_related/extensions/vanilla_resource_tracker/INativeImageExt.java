@@ -1,7 +1,7 @@
 package com.radiance.mixin_related.extensions.vanilla_resource_tracker;
 
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.util.Identifier;
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.resources.Identifier;
 
 public interface INativeImageExt {
 

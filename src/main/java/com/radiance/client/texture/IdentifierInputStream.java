@@ -2,7 +2,7 @@ package com.radiance.client.texture;
 
 import java.io.IOException;
 import java.io.InputStream;
-import net.minecraft.util.Identifier;
+import net.minecraft.resources.Identifier;
 
 public class IdentifierInputStream extends InputStream {
 

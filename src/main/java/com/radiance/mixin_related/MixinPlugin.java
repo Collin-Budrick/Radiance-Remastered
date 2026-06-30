@@ -1,5 +1,6 @@
 package com.radiance.mixin_related;
 
+import com.radiance.client.RendererAvailability;
 import java.util.List;
 import java.util.Set;
 import org.objectweb.asm.tree.ClassNode;
@@ -8,10 +9,15 @@ import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
 
 public class MixinPlugin implements IMixinConfigPlugin {
 
-    public static boolean ENABLED = true;
+    public static boolean ENABLED =
+        RendererAvailability.isRendererRequired()
+            && RendererAvailability.hasPackagedRendererResources();
 
     @Override
     public void onLoad(String mixinPackage) {
+        RendererAvailability.ensureRendererAvailableIfRequired();
+        ENABLED = RendererAvailability.isRendererRequired()
+            && RendererAvailability.hasPackagedRendererResources();
     }
 
     @Override

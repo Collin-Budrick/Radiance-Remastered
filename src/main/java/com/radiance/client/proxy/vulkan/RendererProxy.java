@@ -1,12 +1,9 @@
 package com.radiance.client.proxy.vulkan;
 
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.radiance.client.constant.Constants;
 import com.radiance.mixin_related.extensions.vulkan_render_integration.INativeImageExt;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.VertexFormat;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.util.Window;
+import net.minecraft.client.Minecraft;
+import com.mojang.blaze3d.platform.NativeImage;
+import com.mojang.blaze3d.platform.Window;
 
 public class RendererProxy {
 
@@ -17,8 +14,7 @@ public class RendererProxy {
     public static void initRenderer(Window window) {
         String mapped = System.mapLibraryName("glfw");
         String[] candidates = {mapped, "libglfw.so.3", "libglfw.3.dylib", "glfw3.dll"};
-        RendererProxy.initRenderer(candidates, window.getHandle());
-        RenderSystem.apiDescription = "Vulkan 1.4";
+        RendererProxy.initRenderer(candidates, window.handle());
     }
 
     public static native int maxSupportedTextureSize();
@@ -46,7 +42,7 @@ public class RendererProxy {
         long pointer);
 
     public static NativeImage takeScreenshotWithoutUI() {
-        MinecraftClient mc = MinecraftClient.getInstance();
+        Minecraft mc = Minecraft.getInstance();
         int
             width =
             mc.getWindow()

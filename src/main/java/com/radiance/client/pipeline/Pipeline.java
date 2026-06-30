@@ -1,11 +1,12 @@
 package com.radiance.client.pipeline;
 
 import com.radiance.client.RadianceClient;
+import com.radiance.client.RendererAvailability;
 import com.radiance.client.constant.VulkanConstants;
 import com.radiance.client.option.Options;
 import com.radiance.client.pipeline.config.AttributeConfig;
 import com.radiance.client.pipeline.config.ImageConfig;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -38,8 +39,8 @@ public class Pipeline {
     public static Pipeline INSTANCE = new Pipeline();
     private static final String RAY_TRACING_MODULE_NAME = "render_pipeline.module.ray_tracing.name";
     private static final String RAY_TRACING_SHADER_PACK_PATH_ATTRIBUTE = "render_pipeline.module.ray_tracing.attribute.shader_pack_path";
-    private static final String VANILLA_RAY_TRACING_SHADER_PACK_PATH = "shaders/world/ray_tracing/vanilla-pt.zip";
-    private static final String RESTIR_RAY_TRACING_SHADER_PACK_PATH = "shaders/world/ray_tracing/restir-di.zip";
+    private static final String VANILLA_RAY_TRACING_SHADER_PACK_PATH = "shaders/world/ray_tracing/vanilla-pt";
+    private static final String RESTIR_RAY_TRACING_SHADER_PACK_PATH = "shaders/world/ray_tracing/restir-di";
     private static final String INTERNAL_RAY_TRACING_SHADER_PACK_PATH = VANILLA_RAY_TRACING_SHADER_PACK_PATH;
     private static final String INTERNAL_SHADER_PACK_DIRECTORY = "shaders/world/ray_tracing";
     private static final String MINECRAFT_SHADER_PACK_DIRECTORY = "shaderpacks";
@@ -70,11 +71,15 @@ public class Pipeline {
 
     public static void initFolderPath(Path folderPath) {
         PIPELINE_CONFIG_PATH = folderPath.resolve("pipeline.yaml");
+        RadianceClient.LOGGER.info("Radiance pipeline config path set to {}",
+            PIPELINE_CONFIG_PATH.toAbsolutePath());
     }
 
     public static void reloadAllModuleEntries() {
         try {
             INSTANCE.moduleEntries = ModuleEntry.loadAllModuleEntries();
+            RadianceClient.LOGGER.info("Radiance module entry registry reloaded: {} entries",
+                getModuleEntryCount());
 
 //            System.out.println("Loaded " + INSTANCE.moduleEntries.size() + " module entries.");
 //            for (ModuleEntry entry : INSTANCE.moduleEntries.values()) {
@@ -83,6 +88,10 @@ public class Pipeline {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public static int getModuleEntryCount() {
+        return INSTANCE.moduleEntries == null ? 0 : INSTANCE.moduleEntries.size();
     }
 
     public static void clear() {
@@ -320,12 +329,12 @@ public class Pipeline {
     }
 
     private static Path getMinecraftShaderPackDirectory() {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.runDirectory == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || client.gameDirectory == null) {
             return null;
         }
 
-        Path shaderPackDirectory = client.runDirectory.toPath().resolve(MINECRAFT_SHADER_PACK_DIRECTORY);
+        Path shaderPackDirectory = client.gameDirectory.toPath().resolve(MINECRAFT_SHADER_PACK_DIRECTORY);
         try {
             Files.createDirectories(shaderPackDirectory);
         } catch (IOException e) {
@@ -662,8 +671,12 @@ public class Pipeline {
     public static void build() {
         boolean built = false;
         try {
+            RadianceClient.LOGGER.info("Radiance render pipeline build started: mode={}, modules={}",
+                INSTANCE.mode, INSTANCE.modules.size());
             buildInternal();
             built = true;
+            RadianceClient.LOGGER.info("Radiance render pipeline build completed: modules={}",
+                INSTANCE.modules.size());
         } catch (Exception e) {
             RadianceClient.LOGGER.error("Failed to build render pipeline.", e);
             if (isPipelineCompatibilityFailure(e) && tryRebuildCompatiblePipeline(e)) {
@@ -1055,6 +1068,11 @@ public class Pipeline {
     }
 
     private static void assembleNRDFSRInternal() {
+        if (RendererAvailability.isRendererRequired()) {
+            assembleRequiredNativePresentationInternal(Presets.RT_NRD_FSR.key);
+            return;
+        }
+
         clear();
 
         Module rayTracingModule = addModule(RAY_TRACING_MODULE_NAME);
@@ -1151,6 +1169,26 @@ public class Pipeline {
                 postRenderModule.getInputImageConfig("ldr_input"));
 
         connectOutput(postRenderModule.getOutputImageConfig("post_rendered"));
+    }
+
+    private static void assembleRequiredNativePresentationInternal(String presetName) {
+        clear();
+
+        Module rayTracingModule = addModule(RAY_TRACING_MODULE_NAME);
+        Module toneMappingModule = addModule(TONE_MAPPING_MODULE_NAME);
+
+        rayTracingModule.x = 100;
+        rayTracingModule.y = 220;
+        toneMappingModule.x = 380;
+        toneMappingModule.y = 220;
+
+        INSTANCE.activePresetName = presetName;
+
+        connect(rayTracingModule.getOutputImageConfig("radiance"),
+                toneMappingModule.getInputImageConfig("denoised_radiance"));
+        connectOutput(toneMappingModule.getOutputImageConfig("mapped_output"));
+        RadianceClient.LOGGER.info(
+                "Radiance required mode: using minimal native ray tracing tone-mapped presentation for 26.2");
     }
 
     private static void assembleNRDXESSInternal() {
@@ -1390,17 +1428,14 @@ public class Pipeline {
     public static native boolean isNativeRebuildActive();
 
     private static String getCurrentLanguageCode() {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client != null) {
             var languageManager = client.getLanguageManager();
             if (languageManager != null) {
-                String language = languageManager.getLanguage();
+                String language = languageManager.getSelected();
                 if (language != null && !language.isBlank()) {
                     return language.toLowerCase(Locale.ROOT);
                 }
-            }
-            if (client.options != null && client.options.language != null && !client.options.language.isBlank()) {
-                return client.options.language.toLowerCase(Locale.ROOT);
             }
         }
 
@@ -2149,12 +2184,14 @@ public class Pipeline {
     }
 
     public static void loadPipeline() {
+        RadianceClient.LOGGER.info("Radiance pipeline load started");
         PipelineConfigStorage storage = loadConfigStorage();
 
         if (storage == null) {
             INSTANCE.mode = PipelineMode.PRESET;
             assembleDefault();
             savePipeline();
+            RadianceClient.LOGGER.info("Radiance pipeline load completed with default preset");
             return;
         }
 
@@ -2168,18 +2205,22 @@ public class Pipeline {
             assemblePreset(INSTANCE.activePresetName);
             applyPresetModuleOverrides(storage.presetModules);
             build();
+            RadianceClient.LOGGER.info("Radiance pipeline load completed from preset {}",
+                INSTANCE.activePresetName);
             return;
         }
 
         if (storage.pipeline != null) {
             applyPipelineStorage(storage.pipeline);
             build();
+            RadianceClient.LOGGER.info("Radiance pipeline load completed from stored pipeline");
             return;
         }
 
         // fallback
         assembleDefault();
         build();
+        RadianceClient.LOGGER.info("Radiance pipeline load completed with fallback default");
     }
 
     public Map<String, ModuleEntry> getModuleEntries() {

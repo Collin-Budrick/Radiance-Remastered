@@ -19,39 +19,50 @@ import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_USE_NORM;
 import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_USE_OVERLAY;
 import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_USE_TEXTURE;
 
-import net.minecraft.client.render.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexFormat;
 
 public class PBRVertexFormats {
 
     public static final VertexFormat
         PBR_TRIANGLE =
-        VertexFormat.builder()
-            .add("Pos", PBR_POS)
-            .add("UseNorm", PBR_USE_NORM)
+        VertexFormat.builder(0)
+            .addAttribute(PBR_POS.name(), PBR_POS.offset(), PBR_POS.format().blockSize(),
+                PBR_POS.format(), 1)
+            .addAttribute(PBR_USE_NORM.name(), PBR_USE_NORM.offset(),
+                PBR_USE_NORM.format().blockSize(), PBR_USE_NORM.format(), 1)
 
-            .add("Norm", PBR_NORM)
-            .add("UseColorLayer", PBR_USE_COLOR_LAYER)
+            .addAttribute(PBR_NORM.name(), PBR_NORM.offset(), PBR_NORM.format().blockSize(),
+                PBR_NORM.format(), 1)
+            .addAttribute(PBR_USE_COLOR_LAYER.name(), PBR_USE_COLOR_LAYER.offset(),
+                PBR_USE_COLOR_LAYER.format().blockSize(), PBR_USE_COLOR_LAYER.format(), 1)
 
-            .add("ColorLayer", PBR_COLOR_LAYER)
+            .addAttribute(PBR_COLOR_LAYER.name(), PBR_COLOR_LAYER.offset(),
+                PBR_COLOR_LAYER.format().blockSize(), PBR_COLOR_LAYER.format(), 1)
 
-            .add("UseTexture", PBR_USE_TEXTURE)
-            .add("UseOverlay", PBR_USE_OVERLAY)
-            .add("TextureUV", PBR_TEXTURE_UV)
+            .addAttribute(PBR_USE_TEXTURE.name(), PBR_USE_TEXTURE.offset(),
+                PBR_USE_TEXTURE.format().blockSize(), PBR_USE_TEXTURE.format(), 1)
+            .addAttribute(PBR_USE_OVERLAY.name(), PBR_USE_OVERLAY.offset(),
+                PBR_USE_OVERLAY.format().blockSize(), PBR_USE_OVERLAY.format(), 1)
+            .addAttribute(PBR_TEXTURE_UV.name(), PBR_TEXTURE_UV.offset(),
+                PBR_TEXTURE_UV.format().blockSize(), PBR_TEXTURE_UV.format(), 1)
 
-            .add("OverlayUV", PBR_OVERLAY_UV)
-            .add("UseGlint", PBR_USE_GLINT)
-            .add("TextureID", PBR_TEXTURE_ID)
+            .addAttribute(PBR_OVERLAY_UV.name(), PBR_OVERLAY_UV.offset(),
+                PBR_OVERLAY_UV.format().blockSize(), PBR_OVERLAY_UV.format(), 1)
+            .addAttribute(PBR_USE_GLINT.name(), PBR_USE_GLINT.offset(),
+                PBR_USE_GLINT.format().blockSize(), PBR_USE_GLINT.format(), 1)
+            .addAttribute(PBR_TEXTURE_ID.name(), PBR_TEXTURE_ID.offset(),
+                PBR_TEXTURE_ID.format().blockSize(), PBR_TEXTURE_ID.format(), 1)
 
-            .add("GlintUV", PBR_GLINT_UV)
-            .add("GlintTexture", PBR_GLINT_TEXTURE)
-            .add("UseLight", PBR_USE_LIGHT)
+            .addAttribute(PBR_GLINT_UV.name(), PBR_GLINT_UV.offset(),
+                PBR_GLINT_UV.format().blockSize(), PBR_GLINT_UV.format(), 1)
+            .addAttribute(PBR_GLINT_TEXTURE.name(), PBR_GLINT_TEXTURE.offset(),
+                PBR_GLINT_TEXTURE.format().blockSize(), PBR_GLINT_TEXTURE.format(), 1)
+            .addAttribute(PBR_USE_LIGHT.name(), PBR_USE_LIGHT.offset(),
+                PBR_USE_LIGHT.format().blockSize(), PBR_USE_LIGHT.format(), 1)
 
-            .add("LightUV", PBR_LIGHT_UV)
-            .add("Coordinate", PBR_COORDINATE)
-            .add("AlbedoEmission", PBR_ALBEDO_EMISSION)
-
-            .add("PostBase", PBR_POST_BASE)
-
-            .skip(4)
+            .addAttribute(PBR_LIGHT_UV.name(), PBR_LIGHT_UV.offset(),
+                PBR_LIGHT_UV.format().blockSize(), PBR_LIGHT_UV.format(), 1)
+            .addAttribute(PBR_COORDINATE.name(), PBR_COORDINATE.offset(), 24,
+                PBR_COORDINATE.format(), 1)
             .build();
 }

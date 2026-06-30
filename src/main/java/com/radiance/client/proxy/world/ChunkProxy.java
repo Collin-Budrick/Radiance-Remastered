@@ -1,101 +1,75 @@
 package com.radiance.client.proxy.world;
 
-import static net.minecraft.client.render.VertexFormat.DrawMode.QUADS;
-import static org.lwjgl.system.MemoryUtil.memAddress;
-
-import com.mojang.blaze3d.systems.VertexSorter;
+import com.mojang.blaze3d.vertex.MeshData;
+import com.radiance.client.RadianceClient;
+import com.radiance.client.RendererAvailability;
 import com.radiance.client.constant.Constants;
-import com.radiance.client.option.Options;
-import com.radiance.client.proxy.vulkan.BufferProxy;
-import com.radiance.mixin_related.extensions.vulkan_render_integration.IChunkBuilderBuiltChunkExt;
-import com.radiance.mixin_related.extensions.vulkan_render_integration.IChunkBuilderExt;
-import java.nio.ByteBuffer;
+import com.radiance.client.texture.TextureTracker;
+import com.radiance.client.vertex.PBRVertexFormatElements;
+import com.radiance.mixin_related.extensions.vulkan_render_integration.IViewAreaExt;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
+import java.nio.LongBuffer;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.BuiltBuffer;
-import net.minecraft.client.render.BuiltChunkStorage;
-import net.minecraft.client.render.Camera;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.chunk.BlockBufferAllocatorStorage;
-import net.minecraft.client.render.chunk.ChunkBuilder;
-import net.minecraft.client.render.chunk.ChunkRendererRegion;
-import net.minecraft.client.render.chunk.ChunkRendererRegionBuilder;
-import net.minecraft.client.render.chunk.SectionBuilder;
-import net.minecraft.client.texture.MissingSprite;
-import net.minecraft.client.texture.TextureManager;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkSectionPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.client.Camera;
+import net.minecraft.client.RotatingSectionStorage;
+import net.minecraft.client.renderer.ViewArea;
+import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
+import net.minecraft.client.renderer.chunk.RenderSectionRegion;
+import net.minecraft.client.renderer.chunk.SectionMesh;
+import net.minecraft.client.renderer.chunk.SectionCompiler;
+import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
+import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.SectionPos;
+import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 
 public class ChunkProxy {
 
-    public static final ChunkBuilder.ChunkData PROCESSED = new ChunkBuilder.ChunkData() {
-        @Override
-        public boolean isVisibleThrough(Direction from, Direction to) {
-            return false;
-        }
-    };
-    public static final ChunkBuilder.ChunkData TERRAIN_EMPTY = new ChunkBuilder.ChunkData() {
-        @Override
-        public boolean isVisibleThrough(Direction from, Direction to) {
-            return false;
-        }
-    };
-    private static final Map<Integer, ChunkBuilder.BuiltChunk> rebuildQueue = new ConcurrentHashMap<>();
-    private static final java.util.Set<Integer> forcedRebuildIndices = ConcurrentHashMap.newKeySet();
-    private static final List<Future<?>> rebuildTasks = new ArrayList<>();
-    private static BuiltChunkStorage currentStorage = null;
-    private static boolean pendingRebuildAll = false;
-    private static int numChunkRebuildThreads = getChunkRebuildThreadCount();
-    private static final int numImportantChunkRebuildThreads = 1;
-    private static int numNormalChunkRebuildThreads = Math.max(1,
-        numChunkRebuildThreads - numImportantChunkRebuildThreads);
-    private static final ExecutorService
-        importantChunkRebuildExecutor =
-        Executors.newFixedThreadPool(numImportantChunkRebuildThreads, r -> {
-            Thread thread = new Thread(r);
-            thread.setPriority(Thread.NORM_PRIORITY);
-            return thread;
-        });
-    private static final ThreadLocal<BlockBufferAllocatorStorage>
-        blockBufferAllocatorStorageThreadLocal =
-        ThreadLocal.withInitial(BlockBufferAllocatorStorage::new);
+    public static final SectionMesh PROCESSED = new MarkerSectionMesh();
+    public static final SectionMesh TERRAIN_EMPTY = new MarkerSectionMesh();
+
+    private static final Map<Integer, RebuildEntry> rebuildQueue =
+        new ConcurrentHashMap<>();
+    private static final Set<Integer> forcedRebuildIndices = ConcurrentHashMap.newKeySet();
+    private static ViewArea currentStorage;
+    private static volatile boolean nativeChunkStorageInitialized;
+    private static volatile boolean pendingRebuildAll;
+    private static volatile boolean loggedMissingRegion;
+    private static volatile boolean loggedMissingBlockAtlasTexture;
+    private static volatile boolean loggedChunkTextureRepair;
+    private static final Set<ChunkSectionLayer> loggedChunkVertexStatsLayers =
+        ConcurrentHashMap.newKeySet();
+    private static int uploadedSectionCount;
+
     public static int builtChunkNum = 0;
-    private static ExecutorService backgroundChunkRebuildExecutor = Executors.newFixedThreadPool(
-        numNormalChunkRebuildThreads, r -> {
-            Thread thread = new Thread(r);
-            thread.setPriority(Thread.NORM_PRIORITY);
-            return thread;
-        });
 
     public static native void initNative(int numChunks, int sizeX, int sizeY, int sizeZ,
         int bottomSectionCoord);
 
-    public static native void updateSectionPosNative(int sectionX, int sectionY, int sectionZ);
-
-    public static void init(int numChunks, int sizeX, int sizeY, int sizeZ,
-        int bottomSectionCoord) {
-        clear();
+    public static void init(int numChunks, int sizeX, int sizeY, int sizeZ, int bottomSectionCoord) {
+        nativeChunkStorageInitialized = false;
         initNative(numChunks, sizeX, sizeY, sizeZ, bottomSectionCoord);
+        nativeChunkStorageInitialized = true;
     }
 
-    public static void updateSectionPos(ChunkSectionPos sectionPos) {
-        updateSectionPosNative(sectionPos.getSectionX(), sectionPos.getSectionY(),
-            sectionPos.getSectionZ());
+    private static native void updateSectionPosNative(int x, int y, int z);
+
+    public static void updateSectionPos(SectionPos sectionPos) {
+        if (!nativeChunkStorageInitialized) {
+            return;
+        }
+        updateSectionPosNative(sectionPos.x(), sectionPos.y(), sectionPos.z());
     }
 
-    public static void setStorage(BuiltChunkStorage storage) {
+    public static void setStorage(ViewArea storage) {
         currentStorage = storage;
         if (currentStorage != null && pendingRebuildAll) {
             pendingRebuildAll = false;
@@ -103,56 +77,28 @@ public class ChunkProxy {
         }
     }
 
-    private static int getChunkRebuildThreadCount() {
-        int expectedBufferTotal = RenderLayer.getBlockLayers()
-            .stream()
-            .mapToInt(RenderLayer::getExpectedBufferSize)
-            .sum();
-        int memoryLimited = Math.max(1,
-            (int) (Runtime.getRuntime().maxMemory() * 0.3) / (expectedBufferTotal * 4) - 1);
-        int userThreads = Options.chunkBuildingThreads;
-        return Math.max(2,
-            Math.min(userThreads, Math.min(Options.getMaxChunkBuildingThreads(), memoryLimited)));
-    }
-
     public static AutoCloseable scopedBlockBufferAllocatorStorage() {
-        final BlockBufferAllocatorStorage s = blockBufferAllocatorStorageThreadLocal.get();
-        s.reset();
-        return s::clear;
+        return () -> {
+        };
     }
 
     public static void clear() {
-        waitImportantChunkRebuild();
-
-        backgroundChunkRebuildExecutor.shutdown();
-        try {
-            backgroundChunkRebuildExecutor.awaitTermination(Long.MAX_VALUE, TimeUnit.DAYS);
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
-        numChunkRebuildThreads = getChunkRebuildThreadCount();
-        numNormalChunkRebuildThreads = Math.max(1,
-            numChunkRebuildThreads - numImportantChunkRebuildThreads);
-        backgroundChunkRebuildExecutor = Executors.newFixedThreadPool(numNormalChunkRebuildThreads,
-            r -> {
-                Thread thread = new Thread(r);
-                thread.setPriority(Thread.NORM_PRIORITY);
-                return thread;
-            });
-
         rebuildQueue.clear();
         forcedRebuildIndices.clear();
-        rebuildTasks.clear();
         currentStorage = null;
+        builtChunkNum = 0;
+        nativeChunkStorageInitialized = false;
         pendingRebuildAll = false;
+        loggedMissingRegion = false;
+        loggedChunkVertexStatsLayers.clear();
+        clearNative();
     }
 
-    public static void enqueueRebuild(ChunkBuilder.BuiltChunk chunk) {
-        rebuildQueue.put(chunk.index, chunk);
+    public static void clearNative() {
     }
 
     public static void rebuildAll() {
-        if (currentStorage == null || currentStorage.chunks == null) {
+        if (currentStorage == null) {
             pendingRebuildAll = true;
             return;
         }
@@ -160,321 +106,433 @@ public class ChunkProxy {
         queueRebuildAll(currentStorage);
     }
 
-    private static void queueRebuildAll(BuiltChunkStorage storage) {
-        if (storage == null || storage.chunks == null) {
+    public static void enqueueRebuild(SectionRenderDispatcher.RenderSection chunk) {
+        rebuildQueue.compute(chunk.index, (index, existing) -> new RebuildEntry(chunk,
+            existing == null ? null : existing.region));
+    }
+
+    public static void enqueueRebuild(SectionRenderDispatcher.RenderSection chunk,
+        RenderSectionRegion region) {
+        rebuildQueue.put(chunk.index, new RebuildEntry(chunk, region));
+    }
+
+    public static void waitImportantChunkRebuild() {
+    }
+
+    public static void rebuild(Camera camera) {
+        if (!RendererAvailability.isRendererLifecycleActive() || !nativeChunkStorageInitialized
+            || camera == null) {
+            return;
+        }
+
+        if (currentStorage != null && pendingRebuildAll) {
+            pendingRebuildAll = false;
+            queueRebuildAll(currentStorage);
+        }
+
+        List<RebuildEntry> entries = new ArrayList<>(rebuildQueue.values());
+        if (entries.isEmpty()) {
+            return;
+        }
+
+        BlockPos cameraBlock = camera.blockPosition();
+        int rebuilt = 0;
+        int skippedMissingRegion = 0;
+        for (RebuildEntry entry : entries) {
+            if (entry == null || entry.section == null) {
+                continue;
+            }
+            RenderSectionRegion region = entry.region;
+            if (region == null) {
+                skippedMissingRegion++;
+                continue;
+            }
+
+            boolean important = forcedRebuildIndices.remove(entry.section.index)
+                || isImportant(entry.section, cameraBlock);
+            try {
+                entry.section.compileSync(region);
+                rebuildQueue.remove(entry.section.index);
+                rebuilt++;
+            } catch (RuntimeException exception) {
+                RadianceClient.LOGGER.warn(
+                    "Radiance chunk bridge: failed to rebuild native section index={}",
+                    entry.section.index, exception);
+            }
+        }
+
+        if (skippedMissingRegion > 0 && !loggedMissingRegion) {
+            loggedMissingRegion = true;
+            RadianceClient.LOGGER.info(
+                "Radiance chunk bridge: {} queued sections are waiting for a 26.2 RenderSectionRegion",
+                skippedMissingRegion);
+        }
+        if (rebuilt > 0) {
+            RadianceClient.LOGGER.info(
+                "Radiance chunk bridge: submitted {} queued section rebuilds to the 26.2 compiler",
+                rebuilt);
+        }
+    }
+
+    public static void uploadCompiledSection(SectionPos sectionPos, SectionCompiler.Results results) {
+        if (!RendererAvailability.isRendererLifecycleActive() || currentStorage == null
+            || results == null || results.renderedLayers.isEmpty()) {
+            return;
+        }
+
+        BlockPos origin = sectionPos.origin();
+        SectionRenderDispatcher.RenderSection section = currentStorage.getRenderSectionAt(origin);
+        if (section == null) {
+            return;
+        }
+
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            int blockAtlasTextureId = blockAtlasTextureId();
+            int geometryCount = 0;
+            for (MeshData meshData : results.renderedLayers.values()) {
+                if (meshData != null && meshData.drawState().vertexCount() > 0) {
+                    geometryCount++;
+                }
+            }
+            if (geometryCount == 0) {
+                invalidateSingle(section.index);
+                return;
+            }
+
+            IntBuffer geometryTypes = stack.mallocInt(geometryCount);
+            LongBuffer geometryGroupNames = stack.mallocLong(geometryCount);
+            IntBuffer geometryTextures = stack.mallocInt(geometryCount);
+            IntBuffer vertexFormats = stack.mallocInt(geometryCount);
+            IntBuffer vertexCounts = stack.mallocInt(geometryCount);
+            LongBuffer vertexAddrs = stack.mallocLong(geometryCount);
+
+            int geometryIndex = 0;
+            for (Map.Entry<ChunkSectionLayer, MeshData> entry : results.renderedLayers.entrySet()) {
+                MeshData meshData = entry.getValue();
+                if (meshData == null || meshData.drawState().vertexCount() <= 0) {
+                    continue;
+                }
+
+                ByteBuffer vertexBuffer = meshData.vertexBuffer();
+                int repairedTextures = repairChunkTextureIds(vertexBuffer,
+                    meshData.drawState().vertexCount(), blockAtlasTextureId);
+                logChunkVertexStats(entry.getKey(), vertexBuffer,
+                    meshData.drawState().vertexCount(), blockAtlasTextureId);
+                if (repairedTextures > 0 && !loggedChunkTextureRepair) {
+                    loggedChunkTextureRepair = true;
+                    RadianceClient.LOGGER.info(
+                        "Radiance chunk bridge: repaired {} PBR chunk vertices with block atlas native texture id {}",
+                        repairedTextures, blockAtlasTextureId);
+                }
+
+                geometryTypes.put(geometryIndex, geometryType(entry.getKey()));
+                geometryGroupNames.put(geometryIndex,
+                    MemoryUtil.memAddress(stack.UTF8(entry.getKey().name())));
+                geometryTextures.put(geometryIndex, blockAtlasTextureId);
+                vertexFormats.put(geometryIndex, Constants.DefaultVertexFormat.PBR_TRIANGLE.getValue());
+                vertexCounts.put(geometryIndex, meshData.drawState().vertexCount());
+                vertexAddrs.put(geometryIndex, MemoryUtil.memAddress(vertexBuffer));
+                geometryIndex++;
+            }
+
+            rebuildSingle(origin.getX(), origin.getY(), origin.getZ(), section.index,
+                geometryCount, MemoryUtil.memAddress(geometryTypes),
+                MemoryUtil.memAddress(geometryGroupNames), MemoryUtil.memAddress(geometryTextures),
+                MemoryUtil.memAddress(vertexFormats), MemoryUtil.memAddress(vertexCounts),
+                MemoryUtil.memAddress(vertexAddrs), false);
+            builtChunkNum++;
+            uploadedSectionCount++;
+            if (uploadedSectionCount <= 16 || uploadedSectionCount % 128 == 0) {
+                RadianceClient.LOGGER.info(
+                    "Radiance chunk bridge: uploaded native section index={} origin=({}, {}, {}) geometries={} totalUploaded={}",
+                    section.index, origin.getX(), origin.getY(), origin.getZ(), geometryCount,
+                    uploadedSectionCount);
+            }
+        }
+    }
+
+    private static int geometryType(ChunkSectionLayer layer) {
+        return layer == ChunkSectionLayer.SOLID
+            ? Constants.GeometryTypes.WORLD_SOLID.getValue()
+            : Constants.GeometryTypes.WORLD_TRANSPARENT.getValue();
+    }
+
+    private static int blockAtlasTextureId() {
+        Integer id = TextureTracker.textureID2GLID.get(TextureAtlas.LOCATION_BLOCKS);
+        if (id == null || id == 0) {
+            if (!loggedMissingBlockAtlasTexture) {
+                loggedMissingBlockAtlasTexture = true;
+                RadianceClient.LOGGER.warn(
+                    "Radiance chunk bridge: block atlas native texture id is not available yet");
+            }
+            return 0;
+        }
+        return id;
+    }
+
+    private static int repairChunkTextureIds(ByteBuffer vertexBuffer, int vertexCount,
+        int textureId) {
+        if (textureId == 0 || vertexBuffer == null || vertexCount <= 0) {
+            return 0;
+        }
+
+        int stride = Constants.DefaultVertexFormat.PBR_TRIANGLE.getVertexFormat().getVertexSize();
+        int useTextureOffset = PBRVertexFormatElements.PBR_USE_TEXTURE.offset();
+        int textureIdOffset = PBRVertexFormatElements.PBR_TEXTURE_ID.offset();
+        long baseAddress = MemoryUtil.memAddress(vertexBuffer);
+        int repaired = 0;
+        for (int i = 0; i < vertexCount; i++) {
+            long vertexAddress = baseAddress + (long) i * stride;
+            int useTexture = MemoryUtil.memGetInt(vertexAddress + useTextureOffset);
+            int currentTextureId = MemoryUtil.memGetInt(vertexAddress + textureIdOffset);
+            if (useTexture != 0 && currentTextureId == 0) {
+                MemoryUtil.memPutInt(vertexAddress + textureIdOffset, textureId);
+                repaired++;
+            }
+        }
+        return repaired;
+    }
+
+    private static void logChunkVertexStats(ChunkSectionLayer layer, ByteBuffer vertexBuffer,
+        int vertexCount, int blockAtlasTextureId) {
+        if (vertexBuffer == null || vertexCount <= 0
+            || !loggedChunkVertexStatsLayers.add(layer)) {
+            return;
+        }
+
+        int stride = Constants.DefaultVertexFormat.PBR_TRIANGLE.getVertexFormat().getVertexSize();
+        int useTextureOffset = PBRVertexFormatElements.PBR_USE_TEXTURE.offset();
+        int textureIdOffset = PBRVertexFormatElements.PBR_TEXTURE_ID.offset();
+        int useColorOffset = PBRVertexFormatElements.PBR_USE_COLOR_LAYER.offset();
+        int useLightOffset = PBRVertexFormatElements.PBR_USE_LIGHT.offset();
+        int lightUvOffset = PBRVertexFormatElements.PBR_LIGHT_UV.offset();
+        int textureUvOffset = PBRVertexFormatElements.PBR_TEXTURE_UV.offset();
+        int colorLayerOffset = PBRVertexFormatElements.PBR_COLOR_LAYER.offset();
+        int posOffset = PBRVertexFormatElements.PBR_POS.offset();
+        int alphaModeOffset = PBRVertexFormatElements.PBR_POST_BASE.offset()
+            + 3 * Float.BYTES;
+        long baseAddress = MemoryUtil.memAddress(vertexBuffer);
+        int textured = 0;
+        int colored = 0;
+        int lit = 0;
+        int minAlphaMode = Integer.MAX_VALUE;
+        int maxAlphaMode = Integer.MIN_VALUE;
+        int firstAlphaMode = 0;
+        int zeroTextureIds = 0;
+        int minTextureId = Integer.MAX_VALUE;
+        int maxTextureId = Integer.MIN_VALUE;
+        int minLightU = Integer.MAX_VALUE;
+        int maxLightU = Integer.MIN_VALUE;
+        int minLightV = Integer.MAX_VALUE;
+        int maxLightV = Integer.MIN_VALUE;
+        float firstU = 0.0F;
+        float firstV = 0.0F;
+        float firstR = 0.0F;
+        float firstG = 0.0F;
+        float firstB = 0.0F;
+        float firstA = 0.0F;
+        float minColor = Float.POSITIVE_INFINITY;
+        float maxColor = Float.NEGATIVE_INFINITY;
+        int firstTextureId = 0;
+        float minX = Float.POSITIVE_INFINITY;
+        float minY = Float.POSITIVE_INFINITY;
+        float minZ = Float.POSITIVE_INFINITY;
+        float maxX = Float.NEGATIVE_INFINITY;
+        float maxY = Float.NEGATIVE_INFINITY;
+        float maxZ = Float.NEGATIVE_INFINITY;
+        float[] firstQuadPositions = new float[12];
+
+        for (int i = 0; i < vertexCount; i++) {
+            long vertexAddress = baseAddress + (long) i * stride;
+            float px = MemoryUtil.memGetFloat(vertexAddress + posOffset);
+            float py = MemoryUtil.memGetFloat(vertexAddress + posOffset + Float.BYTES);
+            float pz = MemoryUtil.memGetFloat(vertexAddress + posOffset + 2L * Float.BYTES);
+            minX = Math.min(minX, px);
+            minY = Math.min(minY, py);
+            minZ = Math.min(minZ, pz);
+            maxX = Math.max(maxX, px);
+            maxY = Math.max(maxY, py);
+            maxZ = Math.max(maxZ, pz);
+            if (i < 4) {
+                int positionIndex = i * 3;
+                firstQuadPositions[positionIndex] = px;
+                firstQuadPositions[positionIndex + 1] = py;
+                firstQuadPositions[positionIndex + 2] = pz;
+            }
+            int useTexture = MemoryUtil.memGetInt(vertexAddress + useTextureOffset);
+            int textureId = MemoryUtil.memGetInt(vertexAddress + textureIdOffset);
+            if (i == 0) {
+                firstTextureId = textureId;
+                firstAlphaMode = MemoryUtil.memGetInt(vertexAddress + alphaModeOffset);
+                firstU = MemoryUtil.memGetFloat(vertexAddress + textureUvOffset);
+                firstV = MemoryUtil.memGetFloat(vertexAddress + textureUvOffset + Float.BYTES);
+                firstR = MemoryUtil.memGetFloat(vertexAddress + colorLayerOffset);
+                firstG = MemoryUtil.memGetFloat(vertexAddress + colorLayerOffset + Float.BYTES);
+                firstB = MemoryUtil.memGetFloat(vertexAddress + colorLayerOffset + 2L * Float.BYTES);
+                firstA = MemoryUtil.memGetFloat(vertexAddress + colorLayerOffset + 3L * Float.BYTES);
+            }
+            if (useTexture != 0) {
+                textured++;
+                if (textureId == 0) {
+                    zeroTextureIds++;
+                } else {
+                    minTextureId = Math.min(minTextureId, textureId);
+                    maxTextureId = Math.max(maxTextureId, textureId);
+                }
+            }
+            if (MemoryUtil.memGetInt(vertexAddress + useColorOffset) != 0) {
+                colored++;
+                for (int component = 0; component < 4; component++) {
+                    float value = MemoryUtil.memGetFloat(vertexAddress + colorLayerOffset
+                        + (long) component * Float.BYTES);
+                    minColor = Math.min(minColor, value);
+                    maxColor = Math.max(maxColor, value);
+                }
+            }
+            if (MemoryUtil.memGetInt(vertexAddress + useLightOffset) != 0) {
+                lit++;
+                int lightU = MemoryUtil.memGetInt(vertexAddress + lightUvOffset);
+                int lightV = MemoryUtil.memGetInt(vertexAddress + lightUvOffset + Integer.BYTES);
+                minLightU = Math.min(minLightU, lightU);
+                maxLightU = Math.max(maxLightU, lightU);
+                minLightV = Math.min(minLightV, lightV);
+                maxLightV = Math.max(maxLightV, lightV);
+            }
+            int alphaMode = MemoryUtil.memGetInt(vertexAddress + alphaModeOffset);
+            minAlphaMode = Math.min(minAlphaMode, alphaMode);
+            maxAlphaMode = Math.max(maxAlphaMode, alphaMode);
+        }
+
+        RadianceClient.LOGGER.info(
+            "Radiance chunk bridge: first PBR vertex stats layer={} vertices={} posRange=({}, {}, {})..({}, {}, {}) firstQuad=({}, {}, {})|({}, {}, {})|({}, {}, {})|({}, {}, {}) textured={} zeroTextureIds={} textureIdRange={}..{} blockAtlasTextureId={} alphaModeRange={}..{} firstAlphaMode={} colored={} colorRange={}..{} firstColor=({}, {}, {}, {}) lit={} lightRange=({}, {})..({}, {}) firstTextureId={} firstUv=({}, {})",
+            layer, vertexCount,
+            minX == Float.POSITIVE_INFINITY ? 0.0F : minX,
+            minY == Float.POSITIVE_INFINITY ? 0.0F : minY,
+            minZ == Float.POSITIVE_INFINITY ? 0.0F : minZ,
+            maxX == Float.NEGATIVE_INFINITY ? 0.0F : maxX,
+            maxY == Float.NEGATIVE_INFINITY ? 0.0F : maxY,
+            maxZ == Float.NEGATIVE_INFINITY ? 0.0F : maxZ,
+            firstQuadPositions[0], firstQuadPositions[1], firstQuadPositions[2],
+            firstQuadPositions[3], firstQuadPositions[4], firstQuadPositions[5],
+            firstQuadPositions[6], firstQuadPositions[7], firstQuadPositions[8],
+            firstQuadPositions[9], firstQuadPositions[10], firstQuadPositions[11],
+            textured, zeroTextureIds,
+            minTextureId == Integer.MAX_VALUE ? 0 : minTextureId,
+            maxTextureId == Integer.MIN_VALUE ? 0 : maxTextureId,
+            blockAtlasTextureId,
+            minAlphaMode == Integer.MAX_VALUE ? 0 : minAlphaMode,
+            maxAlphaMode == Integer.MIN_VALUE ? 0 : maxAlphaMode,
+            firstAlphaMode, colored,
+            minColor == Float.POSITIVE_INFINITY ? 0.0F : minColor,
+            maxColor == Float.NEGATIVE_INFINITY ? 0.0F : maxColor,
+            firstR, firstG, firstB, firstA, lit,
+            minLightU == Integer.MAX_VALUE ? 0 : minLightU,
+            minLightV == Integer.MAX_VALUE ? 0 : minLightV,
+            maxLightU == Integer.MIN_VALUE ? 0 : maxLightU,
+            maxLightV == Integer.MIN_VALUE ? 0 : maxLightV,
+            firstTextureId, firstU, firstV);
+    }
+
+    private static native void rebuildSingleNative(int originX, int originY, int originZ, long index,
+        int geometryCount, long geometryTypes, long geometryGroupNames, long geometryTextures,
+        long vertexFormats, long vertexCounts, long vertexAddrs, boolean important);
+
+    public static void rebuildSingle(int originX, int originY, int originZ, long index,
+        int geometryCount, long geometryTypes, long geometryGroupNames, long geometryTextures,
+        long vertexFormats, long vertexCounts, long vertexAddrs, boolean important) {
+        if (!nativeChunkStorageInitialized) {
+            return;
+        }
+        rebuildSingleNative(originX, originY, originZ, index, geometryCount, geometryTypes,
+            geometryGroupNames, geometryTextures, vertexFormats, vertexCounts, vertexAddrs, important);
+    }
+
+    private static native void relocateSingleNative(long index, int x, int y, int z);
+
+    public static void relocateSingle(long index, int x, int y, int z) {
+        if (!nativeChunkStorageInitialized) {
+            return;
+        }
+        relocateSingleNative(index, x, y, z);
+    }
+
+    private static native void invalidateSingleNative(long index);
+
+    public static void invalidateSingle(long index) {
+        if (!nativeChunkStorageInitialized) {
+            return;
+        }
+        invalidateSingleNative(index);
+    }
+
+    private static native boolean isChunkReadyNative(long index);
+
+    public static boolean isChunkReady(long index) {
+        return nativeChunkStorageInitialized && isChunkReadyNative(index);
+    }
+
+    public static boolean isChunkReady(SectionRenderDispatcher.RenderSection builtChunk) {
+        return isChunkReady(builtChunk.index);
+    }
+
+    private static void queueRebuildAll(ViewArea storage) {
+        Collection<SectionRenderDispatcher.RenderSection> sections = sections(storage);
+        if (sections.isEmpty()) {
             pendingRebuildAll = true;
             return;
         }
 
-        for (ChunkBuilder.BuiltChunk builtChunk : storage.chunks) {
-            if (builtChunk == null) {
+        for (SectionRenderDispatcher.RenderSection section : sections) {
+            if (section == null) {
                 continue;
             }
-            forcedRebuildIndices.add(builtChunk.index);
-            builtChunk.scheduleRebuild(true);
-            enqueueRebuild(builtChunk);
+            forcedRebuildIndices.add(section.index);
+            enqueueRebuild(section);
         }
     }
 
-    public static void rebuild(Camera camera) {
-
-        BlockPos blockPos = camera.getBlockPos();
-        for (ChunkBuilder.BuiltChunk builtChunk : rebuildQueue.values()) {
-            boolean forced = forcedRebuildIndices.remove(builtChunk.index);
-            if (builtChunk.needsRebuild() && (forced || builtChunk.shouldBuild())) {
-                builtChunk.cancelRebuild();
-
-                BlockPos
-                    chunkCenterPos =
-                    builtChunk.getOrigin()
-                        .add(8, 8, 8);
-                boolean isImportant = chunkCenterPos.getSquaredDistance(blockPos) < 768.0
-                    || builtChunk.needsImportantRebuild();
-
-                if (isImportant) {
-                    Future<?> rebuildTask = importantChunkRebuildExecutor.submit(() -> {
-                        rebuildSingle(builtChunk, true);
-                    });
-                    rebuildTasks.add(rebuildTask);
-                } else {
-                    backgroundChunkRebuildExecutor.execute(() -> {
-                        rebuildSingle(builtChunk, false);
-                    });
-                }
-            }
+    private static Collection<SectionRenderDispatcher.RenderSection> sections(ViewArea storage) {
+        if (!(storage instanceof IViewAreaExt ext)) {
+            return List.of();
         }
 
-        rebuildQueue.clear();
+        RotatingSectionStorage<SectionRenderDispatcher.RenderSection> sections =
+            ext.radiance$getSections();
+        if (sections == null) {
+            return List.of();
+        }
+
+        List<SectionRenderDispatcher.RenderSection> result = new ArrayList<>(sections.size());
+        sections.forEach(result::add);
+        return result;
     }
 
-    public static void waitImportantChunkRebuild() {
-        if (rebuildTasks.isEmpty()) {
-            return;
-        }
-
-        for (Future<?> rebuildTask : rebuildTasks) {
-            try {
-                rebuildTask.get();
-            } catch (InterruptedException | ExecutionException e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        rebuildTasks.clear();
+    private static boolean isImportant(SectionRenderDispatcher.RenderSection section,
+        BlockPos cameraBlock) {
+        BlockPos origin = section.getRenderOrigin();
+        double dx = origin.getX() + 8.0D - cameraBlock.getX();
+        double dy = origin.getY() + 8.0D - cameraBlock.getY();
+        double dz = origin.getZ() + 8.0D - cameraBlock.getZ();
+        return dx * dx + dy * dy + dz * dz < 768.0D;
     }
 
-    private static void rebuildSingle(ChunkBuilder.BuiltChunk builtChunk, boolean important) {
-        try (var scope = scopedBlockBufferAllocatorStorage()) {
-            ChunkRendererRegionBuilder chunkRendererRegionBuilder = new ChunkRendererRegionBuilder();
-            IChunkBuilderBuiltChunkExt builtChunkExt = (IChunkBuilderBuiltChunkExt) builtChunk;
-            ChunkBuilder chunkBuilder = builtChunkExt.radiance$getChunkBuilder();
-            IChunkBuilderExt chunkBuilderExt = (IChunkBuilderExt) chunkBuilder;
-            ChunkRendererRegion
-                chunkRendererRegion =
-                chunkRendererRegionBuilder.build(chunkBuilderExt.radiance$getWorld(),
-                    ChunkSectionPos.from(builtChunk.getSectionPos()));
+    private static final class RebuildEntry {
 
-            if (chunkRendererRegion == null) {
-                invalidateSingle(builtChunk.index);
-                builtChunk.data.set(ChunkBuilder.ChunkData.EMPTY);
-                return;
-            }
+        private final SectionRenderDispatcher.RenderSection section;
+        private final RenderSectionRegion region;
 
-            BlockBufferAllocatorStorage storage = blockBufferAllocatorStorageThreadLocal.get();
-            rebuildSingle(chunkRendererRegion, chunkBuilder, chunkBuilderExt, builtChunk, storage,
-                important);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+        private RebuildEntry(SectionRenderDispatcher.RenderSection section,
+            RenderSectionRegion region) {
+            this.section = section;
+            this.region = region;
         }
     }
 
-    private static void rebuildSingle(ChunkRendererRegion chunkRendererRegion,
-        ChunkBuilder chunkBuilder,
-        IChunkBuilderExt chunkBuilderExt,
-        ChunkBuilder.BuiltChunk builtChunk,
-        BlockBufferAllocatorStorage storage,
-        boolean important) {
+    private static final class MarkerSectionMesh implements SectionMesh {
 
-        ChunkSectionPos chunkSectionPos = ChunkSectionPos.from(builtChunk.getOrigin());
-
-        Vec3d vec3d = chunkBuilder.getCameraPosition();
-        // TODO: cancel out the sort operation in section builder
-        VertexSorter
-            vertexSorter =
-            VertexSorter.byDistance((float) (vec3d.x - builtChunk.getOrigin()
-                    .getX()),
-                (float) (vec3d.y - builtChunk.getOrigin()
-                    .getY()),
-                (float) (vec3d.z - builtChunk.getOrigin()
-                    .getZ()));
-
-        SectionBuilder.RenderData renderData =
-            ((IChunkBuilderExt) chunkBuilder).radiance$getSectionBuilder()
-                .build(chunkSectionPos, chunkRendererRegion, vertexSorter, storage);
-
-        Map<RenderLayer, BuiltBuffer> buffers = renderData.buffers;
-        builtChunk.setNoCullingBlockEntities(renderData.noCullingBlockEntities);
-
-        if (buffers.isEmpty()) {
-            ChunkBuilder.ChunkData chunkData = new ChunkBuilder.ChunkData() {
-                @Override
-                public List<BlockEntity> getBlockEntities() {
-                    return renderData.blockEntities;
-                }
-
-                @Override
-                public boolean isVisibleThrough(Direction from, Direction to) {
-                    return renderData.chunkOcclusionData.isVisibleThrough(from, to);
-                }
-
-                @Override
-                public boolean isEmpty(RenderLayer layer) {
-                    return true;
-                }
-            };
-            builtChunk.data.set(chunkData);
-            builtChunkNum++;
-
-            invalidateSingle(builtChunk.index);
-        } else {
-            ChunkBuilder.ChunkData chunkData = new ChunkBuilder.ChunkData() {
-                @Override
-                public List<BlockEntity> getBlockEntities() {
-                    return renderData.blockEntities;
-                }
-
-                @Override
-                public boolean isVisibleThrough(Direction from, Direction to) {
-                    return renderData.chunkOcclusionData.isVisibleThrough(from, to);
-                }
-
-                @Override
-                public boolean isEmpty(RenderLayer layer) {
-                    return layer == null || !buffers.containsKey(layer);
-                }
-            };
-            builtChunk.data.set(chunkData);
-            builtChunkNum++;
-
-            ByteBuffer geometryTypeBB = null;
-            ByteBuffer geometryGroupNameBB = null;
-            ByteBuffer geometryTextureBB = null;
-            ByteBuffer vertexFormatBB = null;
-            ByteBuffer vertexCountBB = null;
-            ByteBuffer verticesBB = null;
-            List<ByteBuffer> geometryGroupNameBuffers = new ArrayList<>(buffers.size());
-
-            try {
-                int geometryTypeSize = buffers.size() * Integer.BYTES;
-                geometryTypeBB = MemoryUtil.memAlloc(geometryTypeSize);
-                long geometryTypeAddr = memAddress(geometryTypeBB);
-                int geometryTypeBaseAddr = 0;
-
-                int geometryGroupNameSize = buffers.size() * Long.BYTES;
-                geometryGroupNameBB = MemoryUtil.memAlloc(geometryGroupNameSize);
-                long geometryGroupNameAddr = memAddress(geometryGroupNameBB);
-                int geometryGroupNameBaseAddr = 0;
-
-                int geometryTextureSize = buffers.size() * Integer.BYTES;
-                geometryTextureBB = MemoryUtil.memAlloc(geometryTextureSize);
-                long geometryTextureAddr = memAddress(geometryTextureBB);
-                int geometryTextureBaseAddr = 0;
-
-                int vertexFormatSize = buffers.size() * Integer.BYTES;
-                vertexFormatBB = MemoryUtil.memAlloc(vertexFormatSize);
-                long vertexFormatAddr = memAddress(vertexFormatBB);
-                int vertexFormatBaseAddr = 0;
-
-                int vertexCountSize = buffers.size() * Integer.BYTES;
-                vertexCountBB = MemoryUtil.memAlloc(vertexCountSize);
-                long vertexCountAddr = memAddress(vertexCountBB);
-                int vertexCountBaseAddr = 0;
-
-                int verticesSize = buffers.size() * Long.BYTES;
-                verticesBB = MemoryUtil.memAlloc(verticesSize);
-                long verticesAddr = memAddress(verticesBB);
-                int verticesBaseAddr = 0;
-
-                for (Map.Entry<RenderLayer, BuiltBuffer> entry : buffers.entrySet()) {
-                    RenderLayer renderLayer = entry.getKey();
-                    assert renderLayer.getDrawMode() == QUADS;
-
-                    BuiltBuffer vertexBuffer = entry.getValue();
-                    BufferProxy.BufferInfo vertexBufferInfo = BufferProxy.getBufferInfo(
-                        vertexBuffer.getBuffer());
-                    assert vertexBuffer.getDrawParameters()
-                        .indexCount() == vertexBuffer.getDrawParameters()
-                        .vertexCount() / 4 * 6;
-
-                    TextureManager
-                        textureManager =
-                        MinecraftClient.getInstance()
-                            .getTextureManager();
-
-                    int
-                        geometryTypeID =
-                        Constants.GeometryTypes.getGeometryType(renderLayer, true)
-                            .getValue();
-                    int
-                        geometryTextureID =
-                        textureManager.getTexture(
-                                ((RenderLayer.MultiPhase) renderLayer).phases.texture.getId()
-                                    .orElse(MissingSprite.getMissingSpriteId()))
-                            .getGlId();
-                    int vertexFormatID = Constants.VertexFormats.getValue(
-                        vertexBuffer.getDrawParameters()
-                            .format());
-
-                    geometryTypeBB.putInt(geometryTypeBaseAddr, geometryTypeID);
-                    geometryTypeBaseAddr += Integer.BYTES;
-
-                    ByteBuffer geometryGroupNameBuffer = MemoryUtil.memUTF8(renderLayer.name, true);
-                    geometryGroupNameBuffers.add(geometryGroupNameBuffer);
-                    geometryGroupNameBB.putLong(geometryGroupNameBaseAddr,
-                        memAddress(geometryGroupNameBuffer));
-                    geometryGroupNameBaseAddr += Long.BYTES;
-
-                    geometryTextureBB.putInt(geometryTextureBaseAddr, geometryTextureID);
-                    geometryTextureBaseAddr += Integer.BYTES;
-
-                    vertexFormatBB.putInt(vertexFormatBaseAddr, vertexFormatID);
-                    vertexFormatBaseAddr += Integer.BYTES;
-
-                    vertexCountBB.putInt(vertexCountBaseAddr,
-                        vertexBuffer.getDrawParameters()
-                            .vertexCount());
-                    vertexCountBaseAddr += Integer.BYTES;
-
-                    verticesBB.putLong(verticesBaseAddr, vertexBufferInfo.addr());
-                    verticesBaseAddr += Long.BYTES;
-                }
-
-                rebuildSingle(builtChunk.getOrigin()
-                        .getX(),
-                    builtChunk.getOrigin()
-                        .getY(),
-                    builtChunk.getOrigin()
-                        .getZ(),
-                    builtChunk.index,
-                    buffers.size(),
-                    geometryTypeAddr,
-                    geometryGroupNameAddr,
-                    geometryTextureAddr,
-                    vertexFormatAddr,
-                    vertexCountAddr,
-                    verticesAddr,
-                    important);
-            } finally {
-                if (geometryTypeBB != null) {
-                    MemoryUtil.memFree(geometryTypeBB);
-                }
-                if (geometryGroupNameBB != null) {
-                    MemoryUtil.memFree(geometryGroupNameBB);
-                }
-                if (geometryTextureBB != null) {
-                    MemoryUtil.memFree(geometryTextureBB);
-                }
-                if (vertexFormatBB != null) {
-                    MemoryUtil.memFree(vertexFormatBB);
-                }
-                if (vertexCountBB != null) {
-                    MemoryUtil.memFree(vertexCountBB);
-                }
-                if (verticesBB != null) {
-                    MemoryUtil.memFree(verticesBB);
-                }
-                for (ByteBuffer geometryGroupNameBuffer : geometryGroupNameBuffers) {
-                    MemoryUtil.memFree(geometryGroupNameBuffer);
-                }
-            }
-        }
-
-        for (Map.Entry<RenderLayer, BuiltBuffer> entry : buffers.entrySet()) {
-            entry.getValue()
-                .close();
+        @Override
+        public boolean facesCanSeeEachother(Direction from, Direction to) {
+            return false;
         }
     }
-
-    private static native void rebuildSingle(int originX,
-        int originY,
-        int originZ,
-        long index,
-        int size,
-        long geometryTypes,
-        long geometryGroupNames,
-        long geometryTextures,
-        long vertexFormats,
-        long vertexCounts,
-        long vertices,
-        boolean important);
-
-    public static native boolean isChunkReady(long index);
-
-    public static boolean isChunkReady(ChunkBuilder.BuiltChunk builtChunk) {
-        return isChunkReady(builtChunk.index);
-    }
-
-    public static native void relocateSingle(long index, int originX, int originY, int originZ);
-
-    public static native void invalidateSingle(long index);
 }

@@ -6,7 +6,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import net.minecraft.text.Text;
+import net.minecraft.network.chat.Component;
 
 public class Module {
 
@@ -47,12 +47,12 @@ public class Module {
         return copy;
     }
 
-    public Text translateText(String key) {
+    public Component translateText(String key) {
         if (key == null || key.isEmpty()) {
-            return Text.empty();
+            return Component.empty();
         }
         String translated = dynamicTranslations.get(key);
-        return translated != null ? Text.literal(translated) : Text.translatable(key);
+        return translated != null ? Component.literal(translated) : Component.translatable(key);
     }
 
     public ImageConfig getInputImageConfig(String name) {

@@ -4,7 +4,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
 import java.util.stream.Collectors;
-import net.minecraft.client.texture.NativeImage;
+import com.mojang.blaze3d.platform.NativeImage;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL14;
 import org.lwjgl.opengl.GL33;
@@ -53,12 +53,12 @@ public class VulkanConstants {
             return name;
         }
 
-        public NativeImage.InternalFormat getNativeImageInternalFormat() {
+        public NativeImage.Format getNativeImageInternalFormat() {
             return switch (this) {
-                case VK_FORMAT_R8_UNORM -> NativeImage.InternalFormat.RED;
-                case VK_FORMAT_R8G8_UNORM -> NativeImage.InternalFormat.RG;
-                case VK_FORMAT_R8G8B8_UNORM -> NativeImage.InternalFormat.RGB;
-                case VK_FORMAT_R8G8B8A8_UNORM -> NativeImage.InternalFormat.RGBA;
+                case VK_FORMAT_R8_UNORM -> NativeImage.Format.LUMINANCE;
+                case VK_FORMAT_R8G8_UNORM -> NativeImage.Format.LUMINANCE_ALPHA;
+                case VK_FORMAT_R8G8B8_UNORM -> NativeImage.Format.RGB;
+                case VK_FORMAT_R8G8B8A8_UNORM -> NativeImage.Format.RGBA;
                 default -> throw new IllegalStateException("Unexpected value: " + this.value);
             };
         }

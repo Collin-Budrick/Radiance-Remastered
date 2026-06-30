@@ -6,19 +6,18 @@ import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.memAddress;
 import static org.lwjgl.system.MemoryUtil.memSet;
 
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.radiance.client.constant.Constants;
-import com.radiance.client.texture.TextureTracker;
+import com.mojang.blaze3d.IndexType;
+import com.mojang.blaze3d.PrimitiveTopology;
+import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.util.Map;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.BuiltBuffer;
-import net.minecraft.client.render.Camera;
-import net.minecraft.client.render.Fog;
-import net.minecraft.client.render.RenderPhase;
-import net.minecraft.client.render.VertexFormat;
-import net.minecraft.client.world.ClientWorld;
+import com.mojang.blaze3d.vertex.MeshData;
+import net.minecraft.client.Camera;
+import net.minecraft.client.renderer.fog.FogData;
+import com.mojang.blaze3d.vertex.VertexFormat;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.world.level.Level;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.lwjgl.system.MemoryStack;
@@ -53,25 +52,25 @@ public class BufferProxy {
     public static native void performQueuedUpload();
 
     public static VertexIndexBufferHandle createAndUploadVertexIndexBuffer(
-        BuiltBuffer builtBuffer) {
-        BuiltBuffer.DrawParameters drawParameters = builtBuffer.getDrawParameters();
-        assert builtBuffer.getDrawParameters().mode() == VertexFormat.DrawMode.QUADS;
+        MeshData builtBuffer) {
+        MeshData.DrawState drawState = builtBuffer.drawState();
+        assert drawState.primitiveTopology() == PrimitiveTopology.QUADS;
 
-        int vertexSize = drawParameters.vertexCount() * drawParameters.format().getVertexSizeByte();
+        int vertexSize = drawState.vertexCount() * drawState.format().getVertexSize();
         int vertexId = allocateBuffer();
         initializeBuffer(vertexId, vertexSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT.getValue());
-        queueUpload(builtBuffer.getBuffer(), vertexSize, vertexId);
+        queueUpload(builtBuffer.vertexBuffer(), vertexSize, vertexId);
 
-        int indexSize = drawParameters.indexCount() * drawParameters.indexType().size;
+        int indexSize = drawState.indexCount() * drawState.indexType().bytes;
         int indexId = allocateBuffer();
         initializeBuffer(indexId, indexSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT.getValue());
-        if (builtBuffer.getSortedBuffer() != null) {
-            queueUpload(builtBuffer.getSortedBuffer(), indexSize, indexId);
+        if (builtBuffer.indexBuffer() != null) {
+            queueUpload(builtBuffer.indexBuffer(), indexSize, indexId);
         } else {
-            int type = Constants.IndexTypes.getValue(drawParameters.indexType());
-            int drawMode = Constants.DrawModes.getValue(drawParameters.mode());
-            buildIndexBuffer(indexId, type, drawMode, drawParameters.vertexCount(),
-                drawParameters.indexCount());
+            int type = indexTypeValue(drawState.indexType());
+            int drawMode = primitiveTopologyValue(drawState.primitiveTopology());
+            buildIndexBuffer(indexId, type, drawMode, drawState.vertexCount(),
+                drawState.indexCount());
         }
 
         return new VertexIndexBufferHandle(vertexId, indexId);
@@ -117,8 +116,8 @@ public class BufferProxy {
     public static native void updateWorldUniform(long ptr);
 
     public static void updateWorldUniform(Camera camera, Matrix4f viewMatrix,
-        Matrix4f effectedViewMatrix, Matrix4f projectionMatrix, int overlayTextureID, Fog fog,
-        ClientWorld world, int endSkyTextureID, int endPortalTextureID, int lightMapTextureID) {
+        Matrix4f effectedViewMatrix, Matrix4f projectionMatrix, int overlayTextureID, FogData fog,
+        ClientLevel world, int endSkyTextureID, int endPortalTextureID, int lightMapTextureID) {
         try (MemoryStack stack = stackPush()) {
             int size = 592;
             ByteBuffer bb = stack.malloc(size);
@@ -137,39 +136,47 @@ public class BufferProxy {
             baseAddr += Float.BYTES * 16 * 3; // skip the inverse
             baseAddr += Float.BYTES * 2; // skip the jitter
 
-            float gameTime = RenderSystem.getShaderGameTime();
+            float gameTime = 0.0F;
+            if (world != null) {
+                gameTime = (world.getLevelData().getGameTime() % 24000L) / 24000.0F;
+            }
             bb.putFloat(baseAddr, gameTime);
             baseAddr += Float.BYTES;
 
             baseAddr += Integer.BYTES; // skip seed
 
-            RenderPhase.setupGlintTexturing(0.16F);
-            Matrix4f textureMat = RenderSystem.getTextureMatrix();
+            Matrix4f textureMat = new Matrix4f();
             textureMat.get(baseAddr, bb);
             baseAddr += Float.BYTES * 16;
-            RenderSystem.resetTextureMatrix();
 
             bb.putInt(baseAddr, overlayTextureID);
             baseAddr += Integer.BYTES;
-            bb.putInt(baseAddr, camera.isThirdPerson() ? 0 : 1);
+            bb.putInt(baseAddr, camera.isDetached() ? 0 : 1);
             baseAddr += Integer.BYTES;
-            bb.putFloat(baseAddr, fog.start());
+            float fogStart = fog == null ? 0.0F : fog.environmentalStart;
+            float fogEnd = fog == null ? Float.POSITIVE_INFINITY : fog.environmentalEnd;
+            float fogColorR = fog == null ? 0.0F : fog.color.x();
+            float fogColorG = fog == null ? 0.0F : fog.color.y();
+            float fogColorB = fog == null ? 0.0F : fog.color.z();
+            float fogColorA = fog == null ? 0.0F : fog.color.w();
+
+            bb.putFloat(baseAddr, fogStart);
             baseAddr += Float.BYTES;
-            bb.putFloat(baseAddr, fog.end());
+            bb.putFloat(baseAddr, fogEnd);
             baseAddr += Float.BYTES;
 
-            bb.putFloat(baseAddr, fog.red());
+            bb.putFloat(baseAddr, fogColorR);
             baseAddr += Float.BYTES;
-            bb.putFloat(baseAddr, fog.green());
+            bb.putFloat(baseAddr, fogColorG);
             baseAddr += Float.BYTES;
-            bb.putFloat(baseAddr, fog.blue());
+            bb.putFloat(baseAddr, fogColorB);
             baseAddr += Float.BYTES;
-            bb.putFloat(baseAddr, fog.alpha());
+            bb.putFloat(baseAddr, fogColorA);
             baseAddr += Float.BYTES;
 
-            bb.putInt(baseAddr, fog.shape().getId());
+            bb.putInt(baseAddr, 0);
             baseAddr += Integer.BYTES;
-            bb.putInt(baseAddr, world.getDimensionEffects().getSkyType().ordinal());
+            bb.putInt(baseAddr, getSkyType(world));
             baseAddr += Integer.BYTES;
             baseAddr += Integer.BYTES;
             baseAddr += Integer.BYTES;
@@ -270,7 +277,7 @@ public class BufferProxy {
             memSet(addr, -1, size);
             IntBuffer intView = bb.asIntBuffer();
 
-            for (Map.Entry<Integer, Integer> specularEntry : TextureTracker.GLID2SpecularGLID.entrySet()) {
+            for (Map.Entry<Integer, Integer> specularEntry : textureMap("GLID2SpecularGLID").entrySet()) {
                 int sourceID = specularEntry.getKey();
                 int targetID = specularEntry.getValue();
                 if (sourceID >= 0 && sourceID < elementCount) {
@@ -282,7 +289,7 @@ public class BufferProxy {
                 }
             }
 
-            for (Map.Entry<Integer, Integer> normalEntry : TextureTracker.GLID2NormalGLID.entrySet()) {
+            for (Map.Entry<Integer, Integer> normalEntry : textureMap("GLID2NormalGLID").entrySet()) {
                 int sourceID = normalEntry.getKey();
                 int targetID = normalEntry.getValue();
                 if (sourceID >= 0 && sourceID < elementCount) {
@@ -294,7 +301,7 @@ public class BufferProxy {
                 }
             }
 
-            for (Map.Entry<Integer, Integer> flagEntry : TextureTracker.GLID2FlagGLID.entrySet()) {
+            for (Map.Entry<Integer, Integer> flagEntry : textureMap("GLID2FlagGLID").entrySet()) {
                 int sourceID = flagEntry.getKey();
                 int targetID = flagEntry.getValue();
                 if (sourceID >= 0 && sourceID < elementCount) {
@@ -312,6 +319,47 @@ public class BufferProxy {
 
     public static void updateEmission() {
         // Emission tiles are uploaded immediately through TextureProxy during texture upload.
+    }
+
+    private static int getSkyType(ClientLevel world) {
+        if (world == null) {
+            return 0;
+        }
+        if (world.dimension() == Level.END) {
+            return 2;
+        }
+        return world.dimensionType().hasSkyLight() ? 1 : 0;
+    }
+
+    private static int indexTypeValue(IndexType indexType) {
+        return switch (indexType) {
+            case SHORT -> 0;
+            case INT -> 1;
+        };
+    }
+
+    private static int primitiveTopologyValue(PrimitiveTopology topology) {
+        return switch (topology) {
+            case LINES -> 0;
+            case DEBUG_LINE_STRIP -> 1;
+            case DEBUG_LINES -> 2;
+            case TRIANGLES -> 4;
+            case TRIANGLE_STRIP -> 5;
+            case TRIANGLE_FAN -> 6;
+            case QUADS -> 7;
+            default -> 4;
+        };
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<Integer, Integer> textureMap(String fieldName) {
+        try {
+            Class<?> tracker = Class.forName("com.radiance.client.texture.TextureTracker");
+            Field field = tracker.getField(fieldName);
+            return (Map<Integer, Integer>) field.get(null);
+        } catch (ReflectiveOperationException ignored) {
+            return Map.of();
+        }
     }
 
     public record BufferInfo(ByteBuffer buf, long addr, int size) {

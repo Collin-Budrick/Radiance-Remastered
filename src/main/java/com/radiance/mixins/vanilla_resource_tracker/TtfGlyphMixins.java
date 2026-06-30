@@ -3,22 +3,22 @@ package com.radiance.mixins.vanilla_resource_tracker;
 import com.radiance.mixin_related.extensions.vanilla_resource_tracker.INativeImageExt;
 import com.radiance.mixin_related.extensions.vanilla_resource_tracker.IRenderableGlyphExt;
 import java.util.function.Function;
-import net.minecraft.client.font.BakedGlyph;
-import net.minecraft.client.font.RenderableGlyph;
-import net.minecraft.client.font.TrueTypeFont;
-import net.minecraft.client.texture.NativeImage;
+import net.minecraft.client.gui.font.glyphs.BakedGlyph;
+import com.mojang.blaze3d.font.SheetGlyphInfo;
+import com.mojang.blaze3d.font.TrueTypeGlyphProvider;
+import com.mojang.blaze3d.platform.NativeImage;
 import org.lwjgl.util.freetype.FT_Face;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
 
-@Mixin(TrueTypeFont.TtfGlyph.class)
+@Mixin(TrueTypeGlyphProvider.TtfGlyph.class)
 public class TtfGlyphMixins {
 
     @Shadow
     @Final
-    TrueTypeFont field_2336;
+    TrueTypeGlyphProvider field_2336;
 
     @Final
     @Shadow
@@ -49,7 +49,7 @@ public class TtfGlyphMixins {
      * @reason to pass image targetID
      */
     @Overwrite
-    public BakedGlyph bake(Function<RenderableGlyph, BakedGlyph> function) {
+    public BakedGlyph bake(Function<SheetGlyphInfo, BakedGlyph> function) {
         return function.apply(new IRenderableGlyphExt() {
 
             @Override

@@ -3,12 +3,12 @@ package com.radiance.mixins.vulkan_render_integration;
 import com.radiance.mixin_related.extensions.vulkan_render_integration.IGlUniformExt;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
-import net.minecraft.client.gl.GlUniform;
+import com.mojang.blaze3d.opengl.Uniform;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 
-@Mixin(GlUniform.class)
+@Mixin(Uniform.class)
 public abstract class GlUniformMixins implements IGlUniformExt {
 
     @Shadow
