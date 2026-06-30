@@ -1,104 +1,17 @@
 package com.radiance.mixins.vanilla_resource_tracker;
 
-import com.radiance.mixin_related.extensions.vanilla_resource_tracker.INativeImageExt;
-import com.radiance.mixin_related.extensions.vanilla_resource_tracker.IRenderableGlyphExt;
-import java.util.function.Function;
-import net.minecraft.client.gui.font.glyphs.BakedGlyph;
-import com.mojang.blaze3d.font.SheetGlyphInfo;
-import com.mojang.blaze3d.font.TrueTypeGlyphProvider;
-import com.mojang.blaze3d.platform.NativeImage;
-import org.lwjgl.util.freetype.FT_Face;
-import org.spongepowered.asm.mixin.Final;
+import com.mojang.blaze3d.textures.GpuTexture;
+import com.radiance.client.texture.TextureTracker;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Overwrite;
-import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(TrueTypeGlyphProvider.TtfGlyph.class)
+@Mixin(targets = "com.mojang.blaze3d.font.TrueTypeGlyphProvider$Glyph$1")
 public class TtfGlyphMixins {
 
-    @Shadow
-    @Final
-    TrueTypeGlyphProvider field_2336;
-
-    @Final
-    @Shadow
-    int width;
-
-    @Final
-    @Shadow
-    int height;
-
-    @Final
-    @Shadow
-    float bearingX;
-
-    @Final
-    @Shadow
-    float ascent;
-
-    @Final
-    @Shadow
-    int glyphIndex;
-
-    @Final
-    @Shadow
-    private float advance;
-
-    /**
-     * @author LJIONG
-     * @reason to pass image targetID
-     */
-    @Overwrite
-    public BakedGlyph bake(Function<SheetGlyphInfo, BakedGlyph> function) {
-        return function.apply(new IRenderableGlyphExt() {
-
-            @Override
-            public int getWidth() {
-                return width;
-            }
-
-            @Override
-            public int getHeight() {
-                return height;
-            }
-
-            @Override
-            public float getOversample() {
-                return field_2336.oversample;
-            }
-
-            @Override
-            public float getBearingX() {
-                return bearingX;
-            }
-
-            @Override
-            public float getAscent() {
-                return ascent;
-            }
-
-            @Override
-            public void upload(int x, int y) {
-                throw new UnsupportedOperationException("Deprecated");
-            }
-
-            @Override
-            public void upload(int id, int x, int y) {
-                NativeImage nativeImage = new NativeImage(NativeImage.Format.LUMINANCE, width,
-                    height, false);
-                FT_Face fT_Face = field_2336.getInfo();
-                if (nativeImage.makeGlyphBitmapSubpixel(fT_Face, glyphIndex)) {
-                    ((INativeImageExt) (Object) nativeImage).radiance$setTargetID(id);
-                    nativeImage.upload(0, x, y, 0, 0, width, height, true);
-                } else {
-                    nativeImage.close();
-                }
-            }
-
-            @Override
-            public boolean hasColor() {
-                return false;
-            }
-        });
+    @Inject(method = "upload(IILcom/mojang/blaze3d/textures/GpuTexture;)V", at = @At("HEAD"))
+    private void radiance$trackTtfGlyphUpload(int x, int y, GpuTexture texture, CallbackInfo ci) {
+        TextureTracker.getOrRegisterGuiTexture(texture);
     }
 }

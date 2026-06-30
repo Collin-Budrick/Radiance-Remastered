@@ -1,65 +1,55 @@
 package com.radiance.mixin_related.extensions.vanilla_resource_tracker;
 
 import com.mojang.blaze3d.font.GlyphBitmap;
-import com.mojang.blaze3d.textures.GpuTexture;
 
 public interface IRenderableGlyphExt extends GlyphBitmap {
 
-    void upload(int id, int x, int y);
+    int radiance$getWidth();
 
-    void upload(int x, int y);
+    int radiance$getHeight();
 
-    int getWidth();
+    boolean radiance$hasColor();
 
-    int getHeight();
-
-    boolean hasColor();
-
-    default float getBearingX() {
+    default float radiance$getBearingX() {
         return 0.0f;
     }
 
-    default float getAscent() {
-        return getHeight();
+    default float radiance$getAscent() {
+        return radiance$getHeight();
     }
 
     @Override
     default int getPixelWidth() {
-        return getWidth();
+        return radiance$getWidth();
     }
 
     @Override
     default int getPixelHeight() {
-        return getHeight();
-    }
-
-    @Override
-    default void upload(int x, int y, GpuTexture texture) {
-        upload(x, y);
+        return radiance$getHeight();
     }
 
     @Override
     default boolean isColored() {
-        return hasColor();
+        return radiance$hasColor();
     }
 
     @Override
-    default float getLeft() {
-        return getBearingX();
+    default float getBearingLeft() {
+        return radiance$getBearingX();
+    }
+
+    @Override
+    default float getBearingTop() {
+        return radiance$getAscent();
     }
 
     @Override
     default float getRight() {
-        return getBearingX() + getWidth() / getOversample();
-    }
-
-    @Override
-    default float getTop() {
-        return getAscent();
+        return radiance$getBearingX() + radiance$getWidth() / getOversample();
     }
 
     @Override
     default float getBottom() {
-        return getAscent() - getHeight() / getOversample();
+        return radiance$getAscent() - radiance$getHeight() / getOversample();
     }
 }

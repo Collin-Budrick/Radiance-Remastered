@@ -9,6 +9,10 @@ public interface INativeImageExt {
 
     void radiance$setTargetID(int id);
 
+    boolean radiance$consumeCommandEncoderMirrorSkip();
+
+    void radiance$setCommandEncoderMirrorSkip(boolean skip);
+
     Identifier radiance$getIdentifier();
 
     void radiance$setIdentifier(Identifier id);

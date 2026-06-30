@@ -25,7 +25,13 @@ public interface IShaderProgramExt {
 
     List<String> radiance$getSamplerNamesValue();
 
+    void radiance$setSamplerNamesValue(List<String> samplerNames);
+
     List<Uniform> radiance$getUniformsValue();
 
     Object2IntMap<String> radiance$getSamplerTexturesValue();
+
+    boolean radiance$isVirtualProgram();
+
+    void radiance$setVirtualProgram(boolean virtualProgram);
 }

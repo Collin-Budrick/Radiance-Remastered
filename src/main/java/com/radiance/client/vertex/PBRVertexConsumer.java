@@ -67,7 +67,7 @@ public class PBRVertexConsumer implements VertexConsumer {
     private final int vertexSizeByte;
     private final int writableMask;
     private final int requiredMask;
-    private final float albedoEmission = 0;
+    private float albedoEmission = 0.0F;
     private long vertexPointer = -1L;
     private int vertexCount = 0;
     private int currentMask = 0;
@@ -383,6 +383,14 @@ public class PBRVertexConsumer implements VertexConsumer {
         return base + off;
     }
 
+    private void writeCurrentAlbedoEmission(long base) {
+        int off = PBR_ALBEDO_EMISSION.offset();
+        if (off >= 0) {
+            MemoryUtil.memPutFloat(base + off, this.albedoEmission);
+        }
+        currentMask &= ~bit(PBR_ALBEDO_EMISSION);
+    }
+
     private void endVertex() {
         if (vertexCount == 0) {
             return;
@@ -398,6 +406,7 @@ public class PBRVertexConsumer implements VertexConsumer {
     public VertexConsumer addVertex(float x, float y, float z) {
         long base = beginVertex();
         currentMask = writableMask;
+        writeCurrentAlbedoEmission(base);
 
         int posOff = PBR_POS.offset();
         long p = base + posOff;
@@ -418,6 +427,7 @@ public class PBRVertexConsumer implements VertexConsumer {
     public VertexConsumer addVertex(float x, float y, float z, int glintTextureID) {
         long base = beginVertex(glintTextureID);
         currentMask = writableMask;
+        writeCurrentAlbedoEmission(base);
 
         int posOff = PBR_POS.offset();
         long p = base + posOff;
@@ -520,10 +530,7 @@ public class PBRVertexConsumer implements VertexConsumer {
     }
 
     public VertexConsumer albedoEmission(float emission) {
-        long p = beginElement(PBR_ALBEDO_EMISSION);
-        if (p != -1L) {
-            MemoryUtil.memPutFloat(p, emission);
-        }
+        this.albedoEmission = emission;
         return this;
     }
 

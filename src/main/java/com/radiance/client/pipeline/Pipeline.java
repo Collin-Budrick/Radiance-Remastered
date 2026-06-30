@@ -1068,7 +1068,8 @@ public class Pipeline {
     }
 
     private static void assembleNRDFSRInternal() {
-        if (RendererAvailability.isRendererRequired()) {
+        if (RendererAvailability.isRendererRequired()
+                && Boolean.getBoolean("radiance.renderer.required.minimalPipeline")) {
             assembleRequiredNativePresentationInternal(Presets.RT_NRD_FSR.key);
             return;
         }

@@ -1,0 +1,3 @@
+[submodule "src/main/native/MCVR"]
+	path = src/main/native/MCVR
+	url = https://github.com/Minecraft-Radiance/MCVR.git

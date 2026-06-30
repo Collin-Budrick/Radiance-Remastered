@@ -1,7 +1,10 @@
 package com.radiance.client.option;
 
 import com.radiance.client.RadianceClient;
+import com.radiance.client.RendererAvailability;
 import com.radiance.client.pipeline.Pipeline;
+import com.radiance.client.proxy.vulkan.TextureProxy;
+import com.radiance.client.proxy.world.ChunkProxy;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -219,6 +222,10 @@ public class Options {
 
         if (changed) {
             if (collectChunkEmission) {
+                if (RendererAvailability.isRendererLifecycleActive()) {
+                    TextureProxy.flushEmissionTiles();
+                }
+                ChunkProxy.rebuildAll();
             } else if (write) {
                 Pipeline.ensureSelectedShaderPackAvailable();
             }

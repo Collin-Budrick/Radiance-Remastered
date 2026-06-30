@@ -1,6 +1,5 @@
 package com.radiance.mixins.vanilla_resource_tracker;
 
-import com.radiance.mixin_related.extensions.vanilla_resource_tracker.INativeImageExt;
 import com.mojang.blaze3d.platform.NativeImage;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import org.spongepowered.asm.mixin.Mixin;
@@ -13,11 +12,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class NativeImageBackedTextureMixins extends AbstractTextureMixins {
 
     @Shadow
-    private NativeImage image;
+    private NativeImage pixels;
 
-    @Inject(method = "upload()V", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/texture/NativeImage;upload(IIIZ)V"))
+    @Inject(method = "upload()V",
+        at = @At(value = "INVOKE",
+            target = "Lcom/mojang/blaze3d/systems/CommandEncoder;writeToTexture(Lcom/mojang/blaze3d/textures/GpuTexture;Lcom/mojang/blaze3d/platform/NativeImage;)V"))
     public void setTargetIDBeforeUpload(CallbackInfo ci) {
-        int id = getGlId();
-        ((INativeImageExt) (Object) image).radiance$setTargetID(id);
+        radiance$mirrorFullImageUpload(pixels, 0, 0, 0, false);
     }
 }

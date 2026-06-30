@@ -11,7 +11,8 @@ public class BufferRendererMixins {
 
     @Inject(method = "upload()V", at = @At(value = "TAIL"))
     private void radiance$afterStagedUpload(CallbackInfo ci) {
-        // 26.2 removed BufferUploader.drawWithGlobalProgram. This hook marks the new
-        // staged vertex upload point for Radiance's buffer bridge.
+        // Retired stub: keep excluded unless a real staged-buffer capture is restored.
+        // Upstream BufferRenderer.drawWithGlobalProgram(BuiltBuffer)V is gone in 26.2.
+        // StagedVertexBuffer.upload()V is the surviving upload boundary.
     }
 }

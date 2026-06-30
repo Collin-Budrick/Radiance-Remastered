@@ -18,6 +18,9 @@ public abstract class NativeImageMixins implements INativeImageExt {
     private int targetID = -1;
 
     @Unique
+    private boolean skipCommandEncoderMirror = false;
+
+    @Unique
     private Identifier identifier = null;
 
     @Unique
@@ -53,6 +56,18 @@ public abstract class NativeImageMixins implements INativeImageExt {
     @Override
     public void radiance$setTargetID(int id) {
         this.targetID = id;
+    }
+
+    @Override
+    public boolean radiance$consumeCommandEncoderMirrorSkip() {
+        boolean skip = skipCommandEncoderMirror;
+        skipCommandEncoderMirror = false;
+        return skip;
+    }
+
+    @Override
+    public void radiance$setCommandEncoderMirrorSkip(boolean skip) {
+        this.skipCommandEncoderMirror = skip;
     }
 
     @Override

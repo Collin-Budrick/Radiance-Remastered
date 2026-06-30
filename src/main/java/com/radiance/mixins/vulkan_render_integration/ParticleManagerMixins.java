@@ -2,6 +2,8 @@ package com.radiance.mixins.vulkan_render_integration;
 
 import static com.radiance.client.proxy.world.EntityProxy.PARTICLE_COUNTERS;
 
+import com.llamalad7.mixinextras.sugar.Local;
+import com.radiance.client.RendererAvailability;
 import com.radiance.mixin_related.extensions.vulkan_render_integration.IParticleManagerExt;
 import com.radiance.mixin_related.extensions.vulkan_render_integration.IParticleExt;
 import java.util.List;
@@ -44,12 +46,19 @@ public class ParticleManagerMixins implements IParticleManagerExt {
 
     @Inject(method = "add(Lnet/minecraft/client/particle/Particle;)V", at = @At(value = "HEAD"))
     public void addParticleCounter(Particle particle, CallbackInfo ci) {
+        if (!RendererAvailability.isRendererLifecycleActive()) {
+            return;
+        }
+
         PARTICLE_COUNTERS.computeIfAbsent(particle.getClass(), k -> new AtomicInteger())
             .incrementAndGet();
     }
 
     @Inject(method = "createParticle(Lnet/minecraft/core/particles/ParticleOptions;DDDDDD)Lnet/minecraft/client/particle/Particle;",
-        at = @At(value = "RETURN"))
+        at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/client/particle/ParticleEngine;add(Lnet/minecraft/client/particle/Particle;)V",
+            shift = At.Shift.BEFORE),
+        cancellable = true)
     public void checkParticleCounter(ParticleOptions parameters,
         double x,
         double y,
@@ -57,11 +66,12 @@ public class ParticleManagerMixins implements IParticleManagerExt {
         double velocityX,
         double velocityY,
         double velocityZ,
-        CallbackInfoReturnable<Particle> cir) {
-        Particle particle = cir.getReturnValue();
-        if (particle == null) {
+        CallbackInfoReturnable<Particle> cir,
+        @Local Particle particle) {
+        if (!RendererAvailability.isRendererLifecycleActive()) {
             return;
         }
+
         AtomicInteger counter = PARTICLE_COUNTERS.get(particle.getClass());
         if (counter != null) {
             int numParticles = counter.get();

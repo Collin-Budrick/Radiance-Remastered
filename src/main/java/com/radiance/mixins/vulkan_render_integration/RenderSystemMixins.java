@@ -14,6 +14,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+// Retired in 26.2: these RenderSystem texture-size/frame/crosshair hooks no longer exist.
 @Mixin(RenderSystem.class)
 public abstract class RenderSystemMixins {
 
@@ -43,8 +44,7 @@ public abstract class RenderSystemMixins {
     @Redirect(method = "flipFrame(JLnet/minecraft/client/util/tracy/TracyFrameCapturer;)V",
         at = @At(value = "INVOKE", target = "Lorg/lwjgl/glfw/GLFW;glfwSwapBuffers(J)V", remap = false))
     private static void cancelSwapBuffers(long window) {
-        if (RendererAvailability.isRendererRequired()
-            && RendererAvailability.isRendererLifecycleActive()) {
+        if (RendererAvailability.isRendererLifecycleActive()) {
             return;
         }
         GLFW.glfwSwapBuffers(window);

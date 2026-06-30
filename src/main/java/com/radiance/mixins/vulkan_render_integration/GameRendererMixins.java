@@ -62,6 +62,9 @@ public abstract class GameRendererMixins implements IGameRendererExt {
             target = "Lnet/minecraft/client/renderer/LevelRenderer;render(Lcom/mojang/blaze3d/resource/GraphicsResourceAllocator;Lnet/minecraft/client/DeltaTracker;ZLnet/minecraft/client/renderer/state/level/CameraRenderState;Lorg/joml/Matrix4fc;Lcom/mojang/blaze3d/buffers/GpuBufferSlice;Lorg/joml/Vector4f;Z)V"))
     private void radiance$captureLevelViewMatrix(DeltaTracker tickCounter, CallbackInfo ci,
         @Local CameraRenderState cameraRenderState) {
+        if (!RendererAvailability.isRendererLifecycleActive()) {
+            return;
+        }
         this.radiance$rotationMatrix = new Matrix4f(cameraRenderState.viewRotationMatrix);
     }
 

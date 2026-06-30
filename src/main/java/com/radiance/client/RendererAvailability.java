@@ -24,7 +24,15 @@ public final class RendererAvailability {
     }
 
     public static boolean hasPackagedRendererResources() {
-        return hasPackagedNativeLibrary() && hasResource("/shaders");
+        return hasPackagedNativeLibrary() && hasResource("/shaders") && hasResource("/modules");
+    }
+
+    public static boolean shouldUsePackagedRenderer() {
+        return isRendererRequired() && hasPackagedRendererResources();
+    }
+
+    public static boolean shouldOwnRendererLifecycle() {
+        return shouldUsePackagedRenderer();
     }
 
     public static boolean hasPackagedNativeLibrary() {
@@ -44,7 +52,7 @@ public final class RendererAvailability {
     }
 
     public static void ensureRendererAvailableIfRequired() {
-        if (!isRendererRequired() || hasPackagedRendererResources()) {
+        if (!isRendererRequired() || shouldUsePackagedRenderer()) {
             return;
         }
 
@@ -57,7 +65,7 @@ public final class RendererAvailability {
             ? "a supported OS native library"
             : nativeLibraryResourceName;
         return "Radiance native renderer was requested, but packaged renderer resources are missing. "
-            + "Expected classpath resources /" + expectedNative + " and /shaders. "
+            + "Expected classpath resources /" + expectedNative + ", /shaders, and /modules. "
             + "Build/package the MCVR native renderer resources with Radiance, or unset -D"
             + REQUIRED_PROPERTY + "=true / " + REQUIRED_ENV + "=true to start without the native renderer.";
     }
@@ -102,7 +110,7 @@ public final class RendererAvailability {
     }
 
     public static boolean canInitializeRendererLifecycle() {
-        return nativeRendererLoaded && shaderResourcesStaged;
+        return shouldOwnRendererLifecycle() && nativeRendererLoaded && shaderResourcesStaged;
     }
 
     public static boolean isRendererLifecycleActive() {

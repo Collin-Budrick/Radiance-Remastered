@@ -7,6 +7,7 @@ import com.mojang.blaze3d.vertex.VertexSorting;
 import com.radiance.client.RendererAvailability;
 import com.radiance.client.vertex.PBRVertexConsumer;
 import com.radiance.client.proxy.world.ChunkProxy;
+import com.radiance.mixin_related.extensions.vulkan_render_integration.IBlockColorsExt;
 import java.util.EnumMap;
 import java.util.Map;
 import net.minecraft.client.color.block.BlockColors;
@@ -87,12 +88,9 @@ public abstract class SectionBuilderMixins {
         FluidRenderer fluidRenderer = new FluidRenderer(this.fluidModelSet);
         Map<ChunkSectionLayer, PBRVertexConsumer> builders =
             new EnumMap<>(ChunkSectionLayer.class);
-        BlockQuadOutput blockOutput = (x, y, z, quad, instance) -> radiance$putQuad(
-            radiance$beginBuffer(builders, allocatorStorage, quad.materialInfo().layer()),
-            x, y, z, quad, instance);
-        BlockQuadOutput solidBlockOutput = (x, y, z, quad, instance) -> radiance$putQuad(
-            radiance$beginBuffer(builders, allocatorStorage, ChunkSectionLayer.SOLID),
-            x, y, z, quad, instance);
+        IBlockColorsExt blockColorsExt = this.blockColors instanceof IBlockColorsExt ext
+            ? ext
+            : null;
         FluidRenderer.Output fluidOutput = layer -> radiance$beginBuffer(builders,
             allocatorStorage, layer);
 
@@ -120,8 +118,12 @@ public abstract class SectionBuilderMixins {
             }
 
             if (state.getRenderShape() == RenderShape.MODEL) {
-                blockRenderer.tesselateBlock(ModelBlockRenderer.forceOpaque(this.cutoutLeaves,
-                        state) ? solidBlockOutput : blockOutput,
+                boolean forceSolid = ModelBlockRenderer.forceOpaque(this.cutoutLeaves, state);
+                BlockQuadOutput blockOutput = (x, y, z, quad, instance) -> radiance$putQuad(
+                    radiance$beginBuffer(builders, allocatorStorage,
+                        forceSolid ? ChunkSectionLayer.SOLID : quad.materialInfo().layer()),
+                    x, y, z, quad, instance, blockColorsExt, renderRegion, state, pos);
+                blockRenderer.tesselateBlock(blockOutput,
                     SectionPos.sectionRelative(pos.getX()),
                     SectionPos.sectionRelative(pos.getY()),
                     SectionPos.sectionRelative(pos.getZ()),
@@ -167,7 +169,22 @@ public abstract class SectionBuilderMixins {
 
     @Unique
     private static void radiance$putQuad(PBRVertexConsumer builder, float x, float y, float z,
-        BakedQuad quad, QuadInstance instance) {
+        BakedQuad quad, QuadInstance instance, IBlockColorsExt blockColors,
+        BlockAndTintGetter world, BlockState state, BlockPos pos) {
+        builder.albedoEmission(radiance$getQuadEmission(blockColors, world, state, pos, quad));
         builder.putBlockBakedQuad(x, y, z, quad, instance);
+        builder.albedoEmission(0.0F);
+    }
+
+    @Unique
+    private static float radiance$getQuadEmission(IBlockColorsExt blockColors,
+        BlockAndTintGetter world, BlockState state, BlockPos pos, BakedQuad quad) {
+        if (blockColors == null) {
+            return 0.0F;
+        }
+
+        int tintIndex = quad.materialInfo().tintIndex();
+        return tintIndex < 0 ? 0.0F : blockColors.radiance$getEmission(state, world, pos,
+            tintIndex);
     }
 }

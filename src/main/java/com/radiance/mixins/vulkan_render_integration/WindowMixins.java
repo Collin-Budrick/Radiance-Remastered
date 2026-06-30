@@ -22,8 +22,7 @@ public class WindowMixins {
         remap = false)
     private static void radiance$useVulkanWindow(int width, int height, String title, long monitor,
         GpuBackend backend, CallbackInfoReturnable<Long> cir) {
-        if (RendererAvailability.isRendererRequired()
-            && RendererAvailability.hasPackagedRendererResources()) {
+        if (RendererAvailability.shouldOwnRendererLifecycle()) {
             GLFW.glfwWindowHint(GLFW.GLFW_CLIENT_API, GLFW.GLFW_NO_API);
         }
     }

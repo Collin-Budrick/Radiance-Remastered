@@ -1,80 +1,92 @@
 ﻿# Radiance Upstream Parity Audit
 
-Baseline: `upstream/main` (`414d8e3`). Local branch: `main` (`20e6d0c`).
+Baseline: `upstream/main` (`414d8e3`). Local branch: `main` (`8f9bae4`).
+
+P2-A recompute scope: `src/main/resources/radiance.mixins.json` from `414d8e3` versus the current local worktree, plus the current `build.gradle` Java excludes. The file-by-file matrix below is retained for context, but the mixin/exclude data in this leading section is the current authoritative P2 data.
+
+Latest closure pass: renderer-parity mixins were restored only where there is a compile-safe 26.2 target and a lifecycle gate. Block tint emission moved from the obsolete block-model renderer hook into the custom section-builder path, item rendering moved to the 26.2 submit-node layer, and default launches no longer initialize the packaged native renderer just because resources are present. Old GL, buffer, cloud, and no-op render-phase hooks remain excluded until they are rewritten around 26.2 `GpuDevice`, `GpuTexture`, `RenderPipelines`, and submit-node APIs.
 
 ## Summary
 
-- Upstream Java/resources/build files considered: 497
-- Local tracked/untracked Java/resources/build files considered: 577
-- Changed/deleted/local-only rows in this audit: 207
-- Upstream mixins missing from local JSON: 43
-- Local-only mixins in JSON: 3
-- Build excludes corresponding to upstream active mixins: 36
+- Upstream active mixins: 69
+- Local active mixins: 62
+- Upstream mixins still active locally: 56
+- Upstream mixins intentionally still missing from local JSON: 13
+- Missing upstream mixins with source still Gradle-excluded: 13
+- Missing upstream mixins with source present and not excluded: 0
+- Local-only mixins in JSON: 6
+- Build excludes corresponding to upstream active mixins: 13
+- Excluded mixins still active in local JSON: 0
 
-## Immediate Highest-Risk Gaps
+## Closed This Pass
 
-- `src/main/java/com/radiance/client/proxy/world/EntityProxy.java`: changed. Review semantic diff against upstream and keep 26.2-compatible behavior. Validate visible entities/items/hand/particles with native renderer active.
-- `src/main/java/com/radiance/mixins/vulkan_render_integration/FluidRendererMixins.java`: changed, excluded, JSON-missing. Port compile errors and remove build.gradle exclude. Add to mixin JSON only after compile/runtime prepare passes. Validate fresh world load, chunk uploads, lightmap, fluids, sky, and section movement.
-- `src/main/java/com/radiance/client/proxy/world/ChunkProxy.java`: changed. Review semantic diff against upstream and keep 26.2-compatible behavior. Validate fresh world load, chunk uploads, lightmap, fluids, sky, and section movement.
-- `src/main/java/com/radiance/mixins/vulkan_render_integration/WorldRendererMixins.java`: changed. Review semantic diff against upstream and keep 26.2-compatible behavior. Validate fresh world load, chunk uploads, lightmap, fluids, sky, and section movement.
-- `src/main/java/com/radiance/mixins/vulkan_render_integration/LightmapTextureManagerMixins.java`: changed, stubbed?. Recover upstream behavior instead of reduced stub/no-op. Validate fresh world load, chunk uploads, lightmap, fluids, sky, and section movement.
-- `src/main/java/com/radiance/mixins/vulkan_render_integration/GameRendererMixins.java`: changed. Review semantic diff against upstream and keep 26.2-compatible behavior. Validate required=true title-screen startup with no Mojang swapchain conflict.
-- `src/main/java/com/radiance/mixins/vulkan_render_integration/MinecraftClientMixins.java`: changed. Review semantic diff against upstream and keep 26.2-compatible behavior. Validate required=true title-screen startup with no Mojang swapchain conflict.
-- `src/main/java/com/radiance/mixins/vulkan_render_integration/WindowMixins.java`: changed. Review semantic diff against upstream and keep 26.2-compatible behavior. Validate required=true title-screen startup with no Mojang swapchain conflict.
-- `src/main/java/com/radiance/mixins/vulkan_render_integration/ItemRendererMixins.java`: changed, excluded, JSON-missing. Port compile errors and remove build.gradle exclude. Add to mixin JSON only after compile/runtime prepare passes. Validate visible entities/items/hand/particles with native renderer active.
-- `src/main/resources/radiance.accesswidener`: changed. Review semantic diff against upstream and keep 26.2-compatible behavior. Validate texture upload IDs, PBR auxiliary maps, glyph/font/atlas resources.
+- Block albedo emission now flows through `SectionBuilderMixins` and `PBRVertexConsumer.albedoEmission(float)`, so tinted quads carry mutable emission state without reactivating `BlockModelRendererMixins`.
+- `ItemRendererMixins` now targets the 26.2 `ItemStackRenderState.LayerRenderState.submit(...)` path and forwards vanilla submit-node item rendering unchanged unless the Radiance renderer lifecycle is active.
+- Texture, glyph, shader, particle, entity, fluid, banner, item, and startup mixin sources that could be safely retargeted were compiled and reactivated.
+- `RendererAvailability` now distinguishes packaged resources from native lifecycle ownership: default mode stages resources and keeps safe mixins active, while `radiance.renderer.required=true` owns the native renderer or fails fast if resources are missing.
+- `radiance.mixins.json` contains no references to build-excluded or missing mixin sources.
+
+## Remaining Intentional Excludes
+
+| Mixin | Reason to keep excluded |
+|---|---|
+| `vanilla_resource_tracker.SpriteAtlasTextureMixins` | Redundant with the active 26.2 atlas upload bridge. |
+| `vanilla_resource_tracker.TextureUtilMixins` | Old texture utility hook has no safe 26.2 GL-equivalent activation path. |
+| `vulkan_render_integration.AbstractTextureMixins` | Superseded by command-encoder/GPU texture bridges until a full 26.2 texture ownership design exists. |
+| `vulkan_render_integration.BlockModelRendererMixins` | Obsolete for block emission; emission now belongs to the section-builder quad write path. |
+| `vulkan_render_integration.BufferRendererMixins` | Old buffer draw hook needs a 26.2 `RenderPipelines`/submit-node bridge before activation. |
+| `vulkan_render_integration.CloudRendererMixins` | Old cloud extraction path needs a native 26.2 pipeline design before activation. |
+| `vulkan_render_integration.GLXMixins` | Old GL initialization hook does not map safely to 26.2 `GpuDevice` ownership. |
+| `vulkan_render_integration.GlUniformMixins` | 26.2 uniform target no longer exposes the old shadowed state contract. |
+| `vulkan_render_integration.RenderPhaseLightmapMixins` | No-op render-phase hook; replacement belongs in 26.2 render-pipeline state. |
+| `vulkan_render_integration.RenderPhaseMixins` | No-op render-phase hook; replacement belongs in 26.2 render-pipeline state. |
+| `vulkan_render_integration.RenderPhaseTargetMixins` | No-op render-target hook; replacement belongs in 26.2 submit/pipeline state. |
+| `vulkan_render_integration.RenderSystemMixins` | Old static RenderSystem hook remains unsafe without a 26.2 GPU-device bridge. |
+| `vulkan_render_integration.TextureUtilMixins` | Old GL texture allocation hook remains unsafe without a 26.2 `GpuTexture` bridge. |
+
+## Current Mixin/Exclude Matrix
+
+| Row set | Count | Current handling |
+|---|---:|---|
+| Upstream mixins present in local JSON and not excluded | 56 | Keep active; validate behavior separately against the file matrix. |
+| Upstream mixins missing from local JSON and source excluded | 13 | Keep excluded until each has a real 26.2 replacement target and validation plan. |
+| Upstream mixins missing from local JSON but source not excluded | 0 | No current compiled-but-inactive upstream candidates remain. |
+| Local-only active mixins | 6 | Treat as 26.2-specific replacements/additions until proven redundant. |
+| Excluded mixins still active in local JSON | 0 | No current JSON/class packaging mismatch from the exclude list. |
 
 ## Missing Upstream Mixins
 
-- `vanilla_resource_tracker.AbstractTextureMixins` (source excluded)
-- `vanilla_resource_tracker.BitmapFontGlyphMixins` (source excluded)
-- `vanilla_resource_tracker.BuiltinEmptyGlyphMixins` (source excluded)
-- `vanilla_resource_tracker.FontStorageMixins` (source excluded)
-- `vanilla_resource_tracker.GlyphAtlasTextureMixins` (source excluded)
-- `vanilla_resource_tracker.NativeImageBackedTextureMixins` (source excluded)
-- `vanilla_resource_tracker.OverlayTextureMixins` (source excluded)
-- `vanilla_resource_tracker.ReloadableTextureMixins` (source excluded)
-- `vanilla_resource_tracker.SpriteAtlasTextureMixins` (source excluded)
-- `vanilla_resource_tracker.SpriteContentsMixins` (source excluded)
-- `vanilla_resource_tracker.SpriteMixins` (source excluded)
-- `vanilla_resource_tracker.TextureUtilMixins` (source excluded)
-- `vanilla_resource_tracker.TtfGlyphMixins` (source excluded)
-- `vanilla_resource_tracker.UnicodeTextureGlyphMixins` (source excluded)
-- `vulkan_render_integration.AbstractTextureMixins` (source excluded)
-- `vulkan_render_integration.BannerBlockEntityRendererMixins` (source excluded)
-- `vulkan_render_integration.BillboardParticleMixins` (source compiled or present)
-- `vulkan_render_integration.BlockColorsMixins` (source excluded)
-- `vulkan_render_integration.BlockModelRendererMixins` (source excluded)
-- `vulkan_render_integration.BufferRendererMixins` (source excluded)
-- `vulkan_render_integration.BuiltBufferMixins` (source compiled or present)
-- `vulkan_render_integration.CloudRendererMixins` (source excluded)
-- `vulkan_render_integration.CompiledShaderMixins` (source excluded)
-- `vulkan_render_integration.EntityRenderDispatcherMixins` (source excluded)
-- `vulkan_render_integration.EntityRendererMixins` (source excluded)
-- `vulkan_render_integration.FluidRendererMixins` (source excluded)
-- `vulkan_render_integration.GlStateManagerMixins` (source excluded)
-- `vulkan_render_integration.GlUniformMixins` (source compiled or present)
-- `vulkan_render_integration.GLXMixins` (source compiled or present)
-- `vulkan_render_integration.HeldItemRendererMixins` (source excluded)
-- `vulkan_render_integration.ItemRendererMixins` (source excluded)
-- `vulkan_render_integration.LightningEntityRendererMixins` (source excluded)
-- `vulkan_render_integration.MipmapHelperMixins` (source compiled or present)
-- `vulkan_render_integration.ParticleManagerMixins` (source excluded)
-- `vulkan_render_integration.RenderLayerMixins` (source excluded)
-- `vulkan_render_integration.RenderPhaseLightmapMixins` (source excluded)
-- `vulkan_render_integration.RenderPhaseMixins` (source excluded)
-- `vulkan_render_integration.RenderPhaseTargetMixins` (source excluded)
-- `vulkan_render_integration.RenderSystemMixins` (source compiled or present)
-- `vulkan_render_integration.ShaderLoaderMixins` (source excluded)
-- `vulkan_render_integration.ShaderProgramMixins` (source excluded)
-- `vulkan_render_integration.TextureUtilMixins` (source compiled or present)
-- `vulkan_render_integration.VideoWarningManagerWarningPatternLoaderMixins` (source excluded)
+| Mixin | Build excluded | Source present | Next handling |
+|---|---:|---:|---|
+| `vanilla_resource_tracker.SpriteAtlasTextureMixins` | yes | yes | Keep excluded; active 26.2 atlas upload bridge replaces it. |
+| `vanilla_resource_tracker.TextureUtilMixins` | yes | yes | Keep excluded; old GL texture utility hook. |
+| `vulkan_render_integration.AbstractTextureMixins` | yes | yes | Keep excluded; texture ownership is handled by 26.2 command-encoder/GPU texture bridges for now. |
+| `vulkan_render_integration.BlockModelRendererMixins` | yes | yes | Keep excluded; block emission now flows through `SectionBuilderMixins`. |
+| `vulkan_render_integration.BufferRendererMixins` | yes | yes | Keep excluded; needs 26.2 render-pipeline/submit-node bridge. |
+| `vulkan_render_integration.CloudRendererMixins` | yes | yes | Keep excluded; needs 26.2 cloud extraction design. |
+| `vulkan_render_integration.GlUniformMixins` | yes | yes | Keep excluded; 26.2 uniform target no longer matches upstream state contract. |
+| `vulkan_render_integration.GLXMixins` | yes | yes | Keep excluded; old GL init hook does not map safely to `GpuDevice`. |
+| `vulkan_render_integration.RenderPhaseLightmapMixins` | yes | yes | Keep excluded; no-op render-phase hook. |
+| `vulkan_render_integration.RenderPhaseMixins` | yes | yes | Keep excluded; no-op render-phase hook. |
+| `vulkan_render_integration.RenderPhaseTargetMixins` | yes | yes | Keep excluded; no-op render-target hook. |
+| `vulkan_render_integration.RenderSystemMixins` | yes | yes | Keep excluded; old static RenderSystem hook needs a 26.2 GPU-device bridge. |
+| `vulkan_render_integration.TextureUtilMixins` | yes | yes | Keep excluded; old GL texture allocation hook needs a 26.2 `GpuTexture` bridge. |
 
 ## Local-Only Mixins
 
 - `vulkan_render_integration.CommandEncoderTextureMixins`
 - `vulkan_render_integration.GpuDeviceTextureMixins`
+- `vulkan_render_integration.GuiRendererMixins`
 - `vulkan_render_integration.PreferredGraphicsApiMixins`
+- `vulkan_render_integration.SpriteContentsImagesMixins`
+- `vulkan_render_integration.TextureAtlasUploadMixins`
+
+## Next Safe Restoration Batches
+
+1. Full item geometry parity: the submit-node bridge is active and safe, but deeper geometry capture/glint parity still needs a 26.2 consumer-aware design.
+2. Cloud and buffer parity: keep `CloudRendererMixins` and `BufferRendererMixins` excluded until they are rewritten around 26.2 render pipelines and submit-node ownership.
+3. Old GL parity: keep `GLXMixins`, `RenderSystemMixins`, `GlUniformMixins`, and both `TextureUtilMixins` variants excluded until a real `GpuDevice`/`GpuTexture` bridge exists.
+4. Render-phase cleanup: keep the inactive render-phase target/lightmap hooks excluded unless a concrete 26.2 pipeline state responsibility is found.
 
 ## File-by-File Matrix
 
@@ -280,7 +292,7 @@ Baseline: `upstream/main` (`414d8e3`). Local branch: `main` (`20e6d0c`).
 | `src/main/java/com/radiance/mixin_related/extensions/vulkan_render_integration/IParticleExt.java` | same | Extracts entity, item, hand, particle, and model data for native rendering. | Local state: same | Review semantic diff against upstream and keep 26.2-compatible behavior. Validate visible entities/items/hand/particles with native renderer active. | entities/items | compileJava; build; required=true world screenshot covering entities/items/particles |
 | `src/main/java/com/radiance/mixin_related/extensions/vulkan_render_integration/IParticleManagerExt.java` | changed | Extracts entity, item, hand, particle, and model data for native rendering. | Local state: changed | Review semantic diff against upstream and keep 26.2-compatible behavior. Validate visible entities/items/hand/particles with native renderer active. | entities/items | compileJava; build; required=true world screenshot covering entities/items/particles |
 | `src/main/java/com/radiance/mixins/vulkan_render_integration/BannerBlockEntityRendererMixins.java` | changed, excluded, JSON-missing | Extracts entity, item, hand, particle, and model data for native rendering. | Local state: changed, excluded, JSON-missing; mixin=vulkan_render_integration.BannerBlockEntityRendererMixins | Port compile errors and remove build.gradle exclude. Add to mixin JSON only after compile/runtime prepare passes. Validate visible entities/items/hand/particles with native renderer active. | entities/items | compileJava; build; required=true world screenshot covering entities/items/particles |
-| `src/main/java/com/radiance/mixins/vulkan_render_integration/BillboardParticleMixins.java` | changed, JSON-missing | Extracts entity, item, hand, particle, and model data for native rendering. | Local state: changed, JSON-missing; mixin=vulkan_render_integration.BillboardParticleMixins | Add to mixin JSON only after compile/runtime prepare passes. Validate visible entities/items/hand/particles with native renderer active. | entities/items | compileJava; build; required=true world screenshot covering entities/items/particles |
+| `src/main/java/com/radiance/mixins/vulkan_render_integration/BillboardParticleMixins.java` | changed | Extracts entity, item, hand, particle, and model data for native rendering. | Local state: changed; mixin=vulkan_render_integration.BillboardParticleMixins; upstream `WhiteAshParticle` size behavior restored on 26.2 `SingleQuadParticle.extractRotatedQuad(...)` path | Validate visible entities/items/hand/particles with native renderer active. | entities/items | compileJava; build; required=true world screenshot covering entities/items/particles |
 | `src/main/java/com/radiance/mixins/vulkan_render_integration/EntityRenderDispatcherMixins.java` | changed, excluded, JSON-missing | Extracts entity, item, hand, particle, and model data for native rendering. | Local state: changed, excluded, JSON-missing; mixin=vulkan_render_integration.EntityRenderDispatcherMixins | Port compile errors and remove build.gradle exclude. Add to mixin JSON only after compile/runtime prepare passes. Validate visible entities/items/hand/particles with native renderer active. | entities/items | compileJava; build; required=true world screenshot covering entities/items/particles |
 | `src/main/java/com/radiance/mixins/vulkan_render_integration/EntityRendererMixins.java` | changed, excluded, JSON-missing | Extracts entity, item, hand, particle, and model data for native rendering. | Local state: changed, excluded, JSON-missing; mixin=vulkan_render_integration.EntityRendererMixins | Port compile errors and remove build.gradle exclude. Add to mixin JSON only after compile/runtime prepare passes. Validate visible entities/items/hand/particles with native renderer active. | entities/items | compileJava; build; required=true world screenshot covering entities/items/particles |
 | `src/main/java/com/radiance/mixins/vulkan_render_integration/HeldItemRendererMixins.java` | changed, excluded, JSON-missing | Extracts entity, item, hand, particle, and model data for native rendering. | Local state: changed, excluded, JSON-missing; mixin=vulkan_render_integration.HeldItemRendererMixins | Port compile errors and remove build.gradle exclude. Add to mixin JSON only after compile/runtime prepare passes. Validate visible entities/items/hand/particles with native renderer active. | entities/items | compileJava; build; required=true world screenshot covering entities/items/particles |

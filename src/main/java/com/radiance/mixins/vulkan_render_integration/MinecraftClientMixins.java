@@ -67,7 +67,7 @@ public class MinecraftClientMixins {
 
         RadianceClient.LOGGER.info("Radiance registering auxiliary texture resource reloader");
         this.resourceManager.registerReloadListener(new AuxiliaryTextureReloader());
-        if (RendererAvailability.isRendererRequired()) {
+        if (RendererAvailability.shouldOwnRendererLifecycle()) {
             RadianceClient.LOGGER.info(
                 "Radiance native renderer initialization deferred until a loaded world frame");
         }
@@ -75,7 +75,7 @@ public class MinecraftClientMixins {
 
     @Inject(method = "renderFrame(Z)V", at = @At("HEAD"))
     private void beginRadianceFrame(boolean tick, CallbackInfo ci) {
-        radiance$initializeRequiredRendererForWorld();
+        radiance$initializeRendererForWorld();
 
         if (!RendererAvailability.isRendererLifecycleActive() || !radiance$shouldOwnFrame()) {
             return;
@@ -126,8 +126,8 @@ public class MinecraftClientMixins {
     }
 
     @Unique
-    private void radiance$initializeRequiredRendererForWorld() {
-        if (!RendererAvailability.isRendererRequired()
+    private void radiance$initializeRendererForWorld() {
+        if (!RendererAvailability.shouldOwnRendererLifecycle()
             || RendererAvailability.isRendererInitialized()
             || this.radiance$rendererInitializationAttempted) {
             return;
@@ -137,7 +137,7 @@ public class MinecraftClientMixins {
         if (minecraft.level == null || !minecraft.isGameLoadFinished()) {
             if (!this.radiance$loggedDeferredMenuPresentation) {
                 RadianceClient.LOGGER.info(
-                    "Radiance required mode: keeping Minecraft's 26.2 surface active for menu/loading presentation");
+                    "Radiance renderer lifecycle: keeping Minecraft's 26.2 surface active for menu/loading presentation");
                 this.radiance$loggedDeferredMenuPresentation = true;
             }
             return;
@@ -155,7 +155,7 @@ public class MinecraftClientMixins {
         }
 
         RadianceClient.LOGGER.info(
-            "Radiance renderer required: closing Minecraft GpuSurface and installing no-op surface for native swapchain ownership");
+            "Radiance renderer lifecycle: closing Minecraft GpuSurface and installing no-op surface for native swapchain ownership");
         var currentConfiguration = this.windowSurface.currentConfiguration();
         this.windowSurface.close();
         this.windowSurface = new GpuSurface(new RadianceNoopSurfaceBackend());
@@ -204,7 +204,7 @@ public class MinecraftClientMixins {
     }
 
     private boolean radiance$shouldOwnFrame() {
-        return RendererAvailability.isRendererRequired() && this.radiance$surfaceHandoffComplete;
+        return RendererAvailability.shouldOwnRendererLifecycle() && this.radiance$surfaceHandoffComplete;
     }
 
 }

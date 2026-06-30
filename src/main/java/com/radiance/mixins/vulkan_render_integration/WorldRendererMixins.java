@@ -59,6 +59,10 @@ public abstract class WorldRendererMixins {
         DeltaTracker tickCounter, boolean renderBlockOutline, CameraRenderState camera,
         Matrix4fc frustumMatrix, GpuBufferSlice fogBuffer, Vector4f fogColor,
         boolean panoramicMode, CallbackInfo ci) {
+        if (!RendererAvailability.isRendererLifecycleActive()) {
+            return;
+        }
+
         if (camera.pos != null) {
             PlayerProxy.setCameraPos(camera.pos);
         }

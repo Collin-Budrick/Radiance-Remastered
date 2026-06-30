@@ -10,14 +10,12 @@ import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
 public class MixinPlugin implements IMixinConfigPlugin {
 
     public static boolean ENABLED =
-        RendererAvailability.isRendererRequired()
-            && RendererAvailability.hasPackagedRendererResources();
+        RendererAvailability.shouldUsePackagedRenderer();
 
     @Override
     public void onLoad(String mixinPackage) {
         RendererAvailability.ensureRendererAvailableIfRequired();
-        ENABLED = RendererAvailability.isRendererRequired()
-            && RendererAvailability.hasPackagedRendererResources();
+        ENABLED = RendererAvailability.shouldUsePackagedRenderer();
     }
 
     @Override

@@ -1,8 +1,9 @@
 package com.radiance.mixin_related.extensions.vanilla_resource_tracker;
 
-import net.minecraft.client.gui.font.glyphs.BakedGlyph;
+import com.mojang.blaze3d.font.GlyphInfo;
+import net.minecraft.client.gui.font.glyphs.BakedSheetGlyph;
 
 public interface IGlyphAtlasTextureExt {
 
-    BakedGlyph radiance$bake(IRenderableGlyphExt glyph);
+    BakedSheetGlyph radiance$stitch(GlyphInfo info, IRenderableGlyphExt glyph);
 }

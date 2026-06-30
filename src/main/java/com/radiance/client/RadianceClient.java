@@ -45,8 +45,7 @@ public class RadianceClient implements ClientModInitializer {
             throw new RuntimeException(e);
         }
 
-        boolean rendererResourcesPackaged = RendererAvailability.hasPackagedRendererResources()
-            && RendererAvailability.isRendererRequired();
+        boolean rendererLifecycleRequested = RendererAvailability.shouldUsePackagedRenderer();
         boolean nativeRendererLoaded = false;
 
         // core lib
@@ -67,26 +66,28 @@ public class RadianceClient implements ClientModInitializer {
             copyOptionalFileFromResource(xessDx11Path, Path.of("libxess_dx11.dll"));
             copyOptionalFileFromResource(xessFgPath, Path.of("libxess_fg.dll"));
 
-            loadOptionalLibrary(xessPath);
+            if (rendererLifecycleRequested) {
+                loadOptionalLibrary(xessPath);
+            }
 
-            if (rendererResourcesPackaged && (copiedCoreDll || Files.exists(dllTargetPath))) {
+            if (rendererLifecycleRequested && (copiedCoreDll || Files.exists(dllTargetPath))) {
                 loadNativeRenderer(dllTargetPath);
                 nativeRendererLoaded = true;
                 RendererAvailability.markNativeRendererLoaded(dllTargetPath);
             } else {
-                LOGGER.warn("Radiance native renderer resources are not packaged; continuing with renderer mixins disabled");
+                LOGGER.info("Radiance native renderer lifecycle is not required; continuing with renderer mixins disabled");
             }
         } else if (osName.toLowerCase().contains("linux")) {
             Path soTargetPath = radianceDir.resolve("libcore.so");
             Path soResourcePath = Path.of("libcore.so");
             boolean copiedCoreSo = copyOptionalFileFromResource(soTargetPath, soResourcePath);
 
-            if (rendererResourcesPackaged && (copiedCoreSo || Files.exists(soTargetPath))) {
+            if (rendererLifecycleRequested && (copiedCoreSo || Files.exists(soTargetPath))) {
                 loadNativeRenderer(soTargetPath);
                 nativeRendererLoaded = true;
                 RendererAvailability.markNativeRendererLoaded(soTargetPath);
             } else {
-                LOGGER.warn("Radiance native renderer resources are not packaged; continuing with renderer mixins disabled");
+                LOGGER.info("Radiance native renderer lifecycle is not required; continuing with renderer mixins disabled");
             }
         } else {
             throw new RuntimeException("The OS " + osName + " is not supported");
@@ -99,17 +100,17 @@ public class RadianceClient implements ClientModInitializer {
         RendererAvailability.markShaderResourcesStaged(shaderTargetPath,
             Files.isDirectory(shaderTargetPath));
 
+        if (!nativeRendererLoaded) {
+            LOGGER.info("Radiance native renderer is disabled; skipping native renderer initialization");
+            return;
+        }
+
         // modules
         Path moduleTargetPath = radianceDir.resolve("modules");
         Path moduleResourcePath = Path.of("modules");
         copyFolderFromResource(moduleTargetPath, moduleResourcePath);
 
         Pipeline.initFolderPath(radianceDir);
-        if (!nativeRendererLoaded) {
-            LOGGER.warn("Radiance native renderer is disabled; skipping native renderer initialization");
-            return;
-        }
-
         RendererProxy.initFolderPath(radianceDir.toAbsolutePath().toString());
         LOGGER.info("Radiance native renderer folder path set to {}",
             radianceDir.toAbsolutePath());

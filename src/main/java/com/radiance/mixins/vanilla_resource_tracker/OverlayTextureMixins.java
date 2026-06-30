@@ -1,6 +1,7 @@
 package com.radiance.mixins.vanilla_resource_tracker;
 
 import com.llamalad7.mixinextras.sugar.Local;
+import com.radiance.client.texture.TextureTracker;
 import com.radiance.mixin_related.extensions.vanilla_resource_tracker.INativeImageExt;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import com.mojang.blaze3d.platform.NativeImage;
@@ -19,9 +20,11 @@ public abstract class OverlayTextureMixins {
     @Shadow
     private DynamicTexture texture;
 
-    @Inject(method = "<init>()V", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/texture/NativeImage;upload(IIIIIIIZ)V"))
+    @Inject(method = "<init>()V",
+        at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/client/renderer/texture/DynamicTexture;upload()V"))
     public void setImageTargetIDBeforeUpload(CallbackInfo ci, @Local NativeImage nativeImage) {
-        int id = texture.getGlId();
+        int id = TextureTracker.getOrRegisterGuiTexture(texture.getTexture());
         ((INativeImageExt) (Object) nativeImage).radiance$setTargetID(id);
     }
 }

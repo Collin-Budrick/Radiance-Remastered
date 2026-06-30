@@ -9,6 +9,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+// Retired in 26.2: TextureUtil no longer owns texture ids or image allocation.
 @Mixin(TextureUtil.class)
 public class TextureUtilMixins {
 

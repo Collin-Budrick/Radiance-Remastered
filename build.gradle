@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version "${loom_version}"
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
     id 'maven-publish'
 }
 
@@ -36,44 +36,32 @@ compileJava {
 sourceSets {
     main {
         java {
-            exclude 'com/radiance/mixins/vanilla_resource_tracker/AbstractTextureMixins.java'
-            exclude 'com/radiance/mixins/vanilla_resource_tracker/BitmapFontGlyphMixins.java'
-            exclude 'com/radiance/mixins/vanilla_resource_tracker/BuiltinEmptyGlyphMixins.java'
-            exclude 'com/radiance/mixins/vanilla_resource_tracker/FontStorageMixins.java'
-            exclude 'com/radiance/mixins/vanilla_resource_tracker/GlyphAtlasTextureMixins.java'
-            exclude 'com/radiance/mixins/vanilla_resource_tracker/NativeImageBackedTextureMixins.java'
-            exclude 'com/radiance/mixins/vanilla_resource_tracker/OverlayTextureMixins.java'
-            exclude 'com/radiance/mixins/vanilla_resource_tracker/ReloadableTextureMixins.java'
             exclude 'com/radiance/mixins/vanilla_resource_tracker/SpriteAtlasTextureMixins.java'
-            exclude 'com/radiance/mixins/vanilla_resource_tracker/SpriteContentsMixins.java'
-            exclude 'com/radiance/mixins/vanilla_resource_tracker/SpriteMixins.java'
             exclude 'com/radiance/mixins/vanilla_resource_tracker/TextureUtilMixins.java'
-            exclude 'com/radiance/mixins/vanilla_resource_tracker/TtfGlyphMixins.java'
-            exclude 'com/radiance/mixins/vanilla_resource_tracker/UnicodeTextureGlyphMixins.java'
-            exclude 'com/radiance/mixins/vulkan_render_integration/BannerBlockEntityRendererMixins.java'
+            // 26.2 replaced AbstractTexture GL ids with GpuTexture ownership; keep disabled until
+            // this has a non-duplicating GpuDevice/GpuTexture bridge.
             exclude 'com/radiance/mixins/vulkan_render_integration/AbstractTextureMixins.java'
-            exclude 'com/radiance/mixins/vulkan_render_integration/BlockColorsMixins.java'
+            // 26.2 no longer exposes the old block-model PBR vertex handoff; emission is restored
+            // through SectionBuilderMixins/PBRVertexConsumer instead.
             exclude 'com/radiance/mixins/vulkan_render_integration/BlockModelRendererMixins.java'
+            // 26.2 split draw state between StagedVertexBuffer, PreparedRenderType, and RenderPass;
+            // the old BufferRenderer.drawWithGlobalProgram hook has no safe one-file replacement.
             exclude 'com/radiance/mixins/vulkan_render_integration/BufferRendererMixins.java'
+            // 26.2 clouds use encoded face buffers and RenderPipelines, not the old mesh consumer path.
             exclude 'com/radiance/mixins/vulkan_render_integration/CloudRendererMixins.java'
-            exclude 'com/radiance/mixins/vulkan_render_integration/CompiledShaderMixins.java'
-            exclude 'com/radiance/mixins/vulkan_render_integration/EntityRenderDispatcherMixins.java'
-            exclude 'com/radiance/mixins/vulkan_render_integration/EntityRendererMixins.java'
-            exclude 'com/radiance/mixins/vulkan_render_integration/FluidRendererMixins.java'
-            exclude 'com/radiance/mixins/vulkan_render_integration/GlStateManagerMixins.java'
-            exclude 'com/radiance/mixins/vulkan_render_integration/HeldItemRendererMixins.java'
-            exclude 'com/radiance/mixins/vulkan_render_integration/ItemRendererMixins.java'
-            exclude 'com/radiance/mixins/vulkan_render_integration/LightningEntityRendererMixins.java'
-            exclude 'com/radiance/mixins/vulkan_render_integration/ParticleManagerMixins.java'
-            exclude 'com/radiance/mixins/vulkan_render_integration/RenderLayerMixins.java'
+            // 26.2 debug setup moved into GlDevice; keep the old GLX-named hook disabled until the
+            // startup bridge is validated as part of a renderer lifecycle pass.
+            exclude 'com/radiance/mixins/vulkan_render_integration/GLXMixins.java'
+            // 26.2 Uniform is an interface backed by samplers/UBOs/UTBs, without the old value buffers.
+            exclude 'com/radiance/mixins/vulkan_render_integration/GlUniformMixins.java'
             exclude 'com/radiance/mixins/vulkan_render_integration/RenderPhaseLightmapMixins.java'
             exclude 'com/radiance/mixins/vulkan_render_integration/RenderPhaseMixins.java'
             exclude 'com/radiance/mixins/vulkan_render_integration/RenderPhaseTargetMixins.java'
-            exclude 'com/radiance/mixins/vulkan_render_integration/ShaderLoaderMixins.java'
-            exclude 'com/radiance/mixins/vulkan_render_integration/ShaderProgramMixins.java'
-            exclude 'com/radiance/mixins/vulkan_render_integration/VideoWarningManagerWarningPatternLoaderMixins.java'
+            // 26.2 moved frame present, crosshair, and max texture handling out of RenderSystem.
+            exclude 'com/radiance/mixins/vulkan_render_integration/RenderSystemMixins.java'
+            // 26.2 texture allocation is handled by GpuDeviceTextureMixins, not TextureUtil GL ids.
+            exclude 'com/radiance/mixins/vulkan_render_integration/TextureUtilMixins.java'
             exclude 'com/radiance/client/UnsafeManager.java'
-            exclude 'com/radiance/mixin_related/extensions/vulkan_render_integration/IHeldItemRendererExt.java'
         }
     }
 }
@@ -109,8 +97,7 @@ repositories {
 dependencies {
     // To change the versions see the gradle.properties file
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 
     // https://mvnrepository.com/artifact/org.yaml/snakeyaml
     implementation "org.yaml:snakeyaml:2.5"
@@ -240,11 +227,11 @@ jar {
     }
 }
 
-tasks.named("remapJar") {
+tasks.named("jar") {
     archiveFileName.set("${project.archives_base_name}-${project.version}-fabric-${project.minecraft_version}.jar")
 }
 
-tasks.named("remapSourcesJar") {
+tasks.named("sourcesJar") {
     archiveFileName.set("${project.archives_base_name}-${project.version}-fabric-${project.minecraft_version}-sources.jar")
 }
 

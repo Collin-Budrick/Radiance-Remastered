@@ -15,8 +15,7 @@ public class PreferredGraphicsApiMixins {
 
     @Inject(method = "getBackendsToTry", at = @At("HEAD"), cancellable = true)
     private void radiance$preferVulkanBackend(CallbackInfoReturnable<GpuBackend[]> cir) {
-        if (RendererAvailability.isRendererRequired()
-            && RendererAvailability.hasPackagedRendererResources()) {
+        if (RendererAvailability.shouldOwnRendererLifecycle()) {
             cir.setReturnValue(new GpuBackend[]{new VulkanBackend(), new GlBackend()});
         }
     }
