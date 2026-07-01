@@ -20,11 +20,14 @@ import static com.radiance.client.vertex.PBRVertexFormatElements.PBR_USE_TEXTURE
 
 import com.mojang.blaze3d.IndexType;
 import com.mojang.blaze3d.PrimitiveTopology;
+import com.radiance.client.RadianceClient;
+import com.radiance.client.RendererAvailability;
 import com.radiance.client.texture.TextureTracker;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.ByteOrder;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import com.mojang.blaze3d.vertex.MeshData;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
@@ -59,6 +62,7 @@ public class PBRVertexConsumer implements VertexConsumer {
     private static final int POST_TEXT_MODE_RGBA_SEE_THROUGH = 6;
     private static final int POST_TEXT_MODE_INTENSITY_POLYGON_OFFSET = 7;
     private static final int POST_TEXT_MODE_RGBA_POLYGON_OFFSET = 8;
+    private static final AtomicBoolean LOGGED_ALBEDO_EMISSION = new AtomicBoolean(false);
 
     private final ByteBufferBuilder allocator;
     private final VertexFormat format;
@@ -195,6 +199,14 @@ public class PBRVertexConsumer implements VertexConsumer {
     private static int getRenderTypeTextureId(RenderType renderLayer) {
         Identifier texture = getRenderTypeTexture(renderLayer);
         return texture == null ? 0 : getTextureId(texture);
+    }
+
+    private static int getGlintTextureId(RenderType glintRenderLayer) {
+        if (!RendererAvailability.isRendererLifecycleActive()) {
+            return 0;
+        }
+
+        return getRenderTypeTextureId(glintRenderLayer);
     }
 
     private static Identifier getRenderTypeTexture(RenderType renderLayer) {
@@ -531,6 +543,11 @@ public class PBRVertexConsumer implements VertexConsumer {
 
     public VertexConsumer albedoEmission(float emission) {
         this.albedoEmission = emission;
+        if (emission > 0.0F && LOGGED_ALBEDO_EMISSION.compareAndSet(false, true)) {
+            RadianceClient.LOGGER.info(
+                "Radiance block albedo emission: section-builder quad path wrote positive emission {} into PBR vertices",
+                emission);
+        }
         return this;
     }
 
@@ -546,6 +563,7 @@ public class PBRVertexConsumer implements VertexConsumer {
 
         public GLint(PBRVertexConsumer delegate, RenderType glintRenderLayer) {
             this.delegate = delegate;
+            this.glintTextureID = getGlintTextureId(glintRenderLayer);
         }
 
         @Override
@@ -624,6 +642,7 @@ public class PBRVertexConsumer implements VertexConsumer {
         public GLintOverlay(PBRVertexConsumer delegate, RenderType glintRenderLayer,
             PoseStack.Pose matrix, float textureScale) {
             this.delegate = delegate;
+            this.glintTextureID = getGlintTextureId(glintRenderLayer);
             this.inverseTextureMatrix = new Matrix4f(matrix.pose()).invert();
             this.inverseNormalMatrix = new Matrix3f(matrix.normal()).invert();
             this.textureScale = textureScale;

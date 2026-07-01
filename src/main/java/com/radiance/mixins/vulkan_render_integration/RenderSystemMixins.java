@@ -1,58 +1,109 @@
 package com.radiance.mixins.vulkan_render_integration;
 
+import com.mojang.blaze3d.ProjectionType;
+import com.mojang.blaze3d.buffers.GpuBuffer;
+import com.mojang.blaze3d.buffers.GpuBufferSlice;
+import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.radiance.client.RendererAvailability;
-import com.radiance.client.proxy.vulkan.RendererProxy;
-import org.lwjgl.glfw.GLFW;
-import org.joml.Matrix4f;
-import org.joml.Matrix4fStack;
-import org.spongepowered.asm.mixin.Final;
+import com.radiance.client.state.RenderSystemStateBridge;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-// Retired in 26.2: these RenderSystem texture-size/frame/crosshair hooks no longer exist.
 @Mixin(RenderSystem.class)
 public abstract class RenderSystemMixins {
 
-    @Shadow(remap = false)
-    private static Matrix4f projectionMatrix;
+    @Inject(method = "setupDefaultState()V", at = @At("TAIL"))
+    private static void radiance$afterSetupDefaultState(CallbackInfo ci) {
+        radiance$captureCurrentState();
+    }
 
-    @Shadow(remap = false)
-    private static Matrix4f savedProjectionMatrix;
+    @Inject(method = "setShaderFog(Lcom/mojang/blaze3d/buffers/GpuBufferSlice;)V",
+        at = @At("TAIL"))
+    private static void radiance$afterSetShaderFog(GpuBufferSlice shaderFog, CallbackInfo ci) {
+        RenderSystemStateBridge.setShaderFog(shaderFog);
+    }
 
-    @Final
-    @Shadow(remap = false)
-    private static Matrix4fStack modelViewStack;
+    @Inject(method = "setShaderLights(Lcom/mojang/blaze3d/buffers/GpuBufferSlice;)V",
+        at = @At("TAIL"))
+    private static void radiance$afterSetShaderLights(GpuBufferSlice shaderLights,
+        CallbackInfo ci) {
+        RenderSystemStateBridge.setShaderLights(shaderLights);
+    }
 
-    @Shadow(remap = false)
-    private static Matrix4f textureMatrix;
+    @Inject(method = "enableScissorForRenderTypeDraws(IIII)V", at = @At("TAIL"))
+    private static void radiance$afterEnableScissorForRenderTypeDraws(int x, int y,
+        int width, int height, CallbackInfo ci) {
+        RenderSystemStateBridge.setRenderTypeScissor(true, x, y, width, height);
+    }
 
-    @Inject(method = "maxSupportedTextureSize()I", at = @At(value = "HEAD"), cancellable = true, remap = false)
-    private static void redirectMaxSupportedTextureSize(CallbackInfoReturnable<Integer> cir) {
+    @Inject(method = "disableScissorForRenderTypeDraws()V", at = @At("TAIL"))
+    private static void radiance$afterDisableScissorForRenderTypeDraws(CallbackInfo ci) {
+        RenderSystemStateBridge.setRenderTypeScissor(false, 0, 0, 0, 0);
+    }
+
+    @Inject(method = "setProjectionMatrix(Lcom/mojang/blaze3d/buffers/GpuBufferSlice;Lcom/mojang/blaze3d/ProjectionType;)V",
+        at = @At("TAIL"))
+    private static void radiance$afterSetProjectionMatrix(GpuBufferSlice projectionMatrix,
+        ProjectionType projectionType, CallbackInfo ci) {
+        RenderSystemStateBridge.setProjectionMatrix(projectionMatrix, projectionType,
+            RenderSystem.getModelViewMatrixCopy());
+    }
+
+    @Inject(method = "backupProjectionMatrix()V", at = @At("TAIL"))
+    private static void radiance$afterBackupProjectionMatrix(CallbackInfo ci) {
+        RenderSystemStateBridge.backupProjectionMatrix(RenderSystem.getProjectionMatrixBuffer(),
+            RenderSystem.getProjectionType());
+    }
+
+    @Inject(method = "restoreProjectionMatrix()V", at = @At("TAIL"))
+    private static void radiance$afterRestoreProjectionMatrix(CallbackInfo ci) {
+        RenderSystemStateBridge.restoreProjectionMatrix(RenderSystem.getProjectionMatrixBuffer(),
+            RenderSystem.getProjectionType(), RenderSystem.getModelViewMatrixCopy());
+    }
+
+    @Inject(method = "getModelViewMatrixCopy()Lorg/joml/Matrix4f;", at = @At("RETURN"))
+    private static void radiance$afterGetModelViewMatrixCopy(
+        CallbackInfoReturnable<org.joml.Matrix4f> cir) {
+        RenderSystemStateBridge.setModelViewMatrix(cir.getReturnValue());
+    }
+
+    @Inject(method = "setGlobalSettingsUniform(Lcom/mojang/blaze3d/buffers/GpuBuffer;)V",
+        at = @At("TAIL"))
+    private static void radiance$afterSetGlobalSettingsUniform(GpuBuffer buffer,
+        CallbackInfo ci) {
+        RenderSystemStateBridge.setGlobalSettingsUniform(buffer);
+    }
+
+    @Inject(method = "bindDefaultUniforms(Lcom/mojang/blaze3d/systems/RenderPass;)V",
+        at = @At("TAIL"))
+    private static void radiance$afterBindDefaultUniforms(RenderPass renderPass,
+        CallbackInfo ci) {
         if (!RendererAvailability.isRendererLifecycleActive()) {
             return;
         }
 
-        int maxImageSize = RendererProxy.maxSupportedTextureSize();
-        cir.setReturnValue(maxImageSize);
+        RenderSystemStateBridge.setDefaultUniformBindings(RenderSystem.getProjectionMatrixBuffer(),
+            RenderSystem.getShaderFog(),
+            RenderSystem.getGlobalSettingsUniform(),
+            RenderSystem.getShaderLights(),
+            RenderSystem.getProjectionType(),
+            RenderSystem.getModelViewMatrixCopy());
     }
 
-    @Redirect(method = "flipFrame(JLnet/minecraft/client/util/tracy/TracyFrameCapturer;)V",
-        at = @At(value = "INVOKE", target = "Lorg/lwjgl/glfw/GLFW;glfwSwapBuffers(J)V", remap = false))
-    private static void cancelSwapBuffers(long window) {
-        if (RendererAvailability.isRendererLifecycleActive()) {
+    private static void radiance$captureCurrentState() {
+        if (!RendererAvailability.isRendererLifecycleActive()) {
             return;
         }
-        GLFW.glfwSwapBuffers(window);
-    }
 
-    @Redirect(method = "renderCrosshair(I)V", at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/platform/GLX;_renderCrosshair(IZZZ)V"))
-    private static void cancelDrawCrossAirForNow(int size, boolean drawX, boolean drawY,
-        boolean drawZ) {
-
+        RenderSystemStateBridge.captureCurrentState(RenderSystem.getProjectionMatrixBuffer(),
+            RenderSystem.getProjectionType(),
+            RenderSystem.getModelViewMatrixCopy(),
+            RenderSystem.getShaderFog(),
+            RenderSystem.getShaderLights(),
+            RenderSystem.getGlobalSettingsUniform());
     }
 }

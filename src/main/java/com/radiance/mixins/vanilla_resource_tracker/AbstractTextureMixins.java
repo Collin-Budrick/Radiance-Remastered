@@ -41,8 +41,8 @@ public abstract class AbstractTextureMixins {
         TextureTracker.registerTextureIdentifier(identifier, texture);
         int targetId = allowSmallTexture || TextureTracker.shouldAllowSmallTexture(identifier,
             texture)
-            ? TextureTracker.getOrRegisterGuiTexture(texture)
-            : TextureTracker.getOrRegisterGpuTexture(texture);
+            ? TextureTracker.getOrRegisterGuiTextureHandle(texture)
+            : TextureTracker.getOrRegisterTextureHandle(texture);
         if (targetId == 0) {
             return;
         }

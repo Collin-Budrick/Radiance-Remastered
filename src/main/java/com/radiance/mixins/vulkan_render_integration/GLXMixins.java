@@ -1,16 +1,17 @@
 package com.radiance.mixins.vulkan_render_integration;
 
 import com.mojang.blaze3d.opengl.GlDebug;
-import com.mojang.blaze3d.opengl.GlDevice;
 import com.radiance.client.RendererAvailability;
 import java.util.Set;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
-@Mixin(GlDevice.class)
+@Mixin(targets = "com.mojang.blaze3d.opengl.GlDevice")
 public class GLXMixins {
 
+    // 26.2 moved GL initialization into GlDevice. The renderer is not active yet during
+    // construction, so ownership gating is the safe equivalent of the old GLX._init hook.
     @Redirect(method =
         "<init>(JLcom/mojang/blaze3d/shaders/ShaderSource;"
             + "Lcom/mojang/blaze3d/shaders/GpuDebugOptions;)V",

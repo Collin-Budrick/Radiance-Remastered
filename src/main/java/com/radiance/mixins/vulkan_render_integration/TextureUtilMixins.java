@@ -1,37 +1,11 @@
 package com.radiance.mixins.vulkan_render_integration;
 
-import com.mojang.blaze3d.platform.TextureUtil;
-import com.radiance.client.proxy.vulkan.TextureProxy;
-import com.mojang.blaze3d.platform.NativeImage;
-import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-
 // Retired in 26.2: TextureUtil no longer owns texture ids or image allocation.
-@Mixin(TextureUtil.class)
-public class TextureUtilMixins {
+// Allocation is tracked at GpuDevice.createTexture(...), and uploads are mirrored at
+// CommandEncoder.writeToTexture(...). Keep this source excluded; the old hooks targeted
+// missing generateTextureId()/prepareImage(...) methods.
+public final class TextureUtilMixins {
 
-    @Inject(method = "generateTextureId()I", at = @At(value = "HEAD"), cancellable = true, remap = false)
-    private static void redirectGenerateTextureId(CallbackInfoReturnable<Integer> cir) {
-        int textureId = TextureProxy.generateTextureId();
-        cir.setReturnValue(textureId);
-    }
-
-    @Inject(method = "prepareImage(Lnet/minecraft/client/texture/NativeImage$InternalFormat;IIII)V",
-        at = @At(value = "INVOKE",
-            target = "Lcom/mojang/blaze3d/systems/RenderSystem;assertOnRenderThreadOrInit()V",
-            shift = At.Shift.AFTER,
-            remap = false),
-        cancellable = true)
-    private static void redirectPrepareImage(NativeImage.Format internalFormat,
-        int id,
-        int maxLevel,
-        int width,
-        int height,
-        CallbackInfo ci) {
-        TextureProxy.prepareImage(internalFormat, id, maxLevel + 1, width, height);
-        ci.cancel();
+    private TextureUtilMixins() {
     }
 }

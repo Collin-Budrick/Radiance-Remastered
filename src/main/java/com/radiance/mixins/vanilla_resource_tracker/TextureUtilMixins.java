@@ -1,9 +1,10 @@
 package com.radiance.mixins.vanilla_resource_tracker;
 
-import com.mojang.blaze3d.platform.TextureUtil;
-import org.spongepowered.asm.mixin.Mixin;
+// Retired in 26.2: TextureUtil no longer owns texture ids or image allocation.
+// Texture tracking now lives on GpuDevice.createTexture(...), CommandEncoder.writeToTexture(...),
+// and sprite/atlas upload bridges. Keep this source excluded instead of installing a no-op mixin.
+public final class TextureUtilMixins {
 
-// Retired in 26.2: tracker capture moved to GPU texture upload/sprite paths.
-@Mixin(TextureUtil.class)
-public abstract class TextureUtilMixins {
+    private TextureUtilMixins() {
+    }
 }

@@ -43,14 +43,18 @@ public final class ShaderProxy {
         int uniformBufferSize = intValue(invoke(shader, "uniformBufferSize"));
         ByteBuffer bb = stack.calloc(uniformBufferSize);
         int uniformIndex = 0;
+        java.util.List<Object> uniforms = listValue(invoke(shaderProgram,
+            "radiance$getUniformsValue")).stream()
+            .filter(uniform -> (Object) uniform instanceof IGlUniformExt ext
+                && ext.radiance$hasCpuDataValue())
+            .toList();
         for (Object field : iterableValue(invoke(shader, "fields"))) {
             if (boolValue(invoke(field, "isSampler"))) {
                 bb.putInt(intValue(invoke(field, "offset")),
                     resolveSamplerTextureId(shaderProgram, field));
                 continue;
             }
-            Uniform uniform = (Uniform) listValue(invoke(shaderProgram,
-                "radiance$getUniformsValue")).get(uniformIndex++);
+            Uniform uniform = (Uniform) uniforms.get(uniformIndex++);
             putUniform(bb, field, uniform);
         }
         return new UniformHandle(MemoryUtil.memAddress(bb), uniformBufferSize);

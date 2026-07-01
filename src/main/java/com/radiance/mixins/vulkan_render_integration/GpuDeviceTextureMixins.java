@@ -18,13 +18,13 @@ public class GpuDeviceTextureMixins {
     private void registerSupplierTexture(Supplier<String> label, int usage, GpuFormat format,
         int width, int height, int depthOrLayers, int mipLevels,
         CallbackInfoReturnable<GpuTexture> cir) {
-        TextureTracker.registerGpuTexture(cir.getReturnValue());
+        TextureTracker.registerTextureHandle(cir.getReturnValue());
     }
 
     @Inject(method = "createTexture(Ljava/lang/String;ILcom/mojang/blaze3d/GpuFormat;IIII)Lcom/mojang/blaze3d/textures/GpuTexture;",
         at = @At("RETURN"))
     private void registerNamedTexture(String label, int usage, GpuFormat format, int width,
         int height, int depthOrLayers, int mipLevels, CallbackInfoReturnable<GpuTexture> cir) {
-        TextureTracker.registerGpuTexture(cir.getReturnValue());
+        TextureTracker.registerTextureHandle(cir.getReturnValue());
     }
 }

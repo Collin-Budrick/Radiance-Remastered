@@ -89,8 +89,8 @@ public final class TextureUploadReplay {
                 }
             }
             int targetId = allowSmallTexture
-                ? TextureTracker.getOrRegisterGuiTexture(texture)
-                : TextureTracker.getOrRegisterGpuTexture(texture);
+                ? TextureTracker.getOrRegisterGuiTextureHandle(texture)
+                : TextureTracker.getOrRegisterTextureHandle(texture);
             if (targetId != 0) {
                 replayedTextures++;
             }
@@ -121,7 +121,7 @@ public final class TextureUploadReplay {
 
         private void queue(GpuTexture texture, int targetId) {
             if (identifier != null) {
-                TextureTracker.textureID2GLID.put(identifier, targetId);
+                TextureTracker.rememberTextureHandle(identifier, targetId);
             }
 
             AuxiliaryTextures.loadAndUpload(image, texture, mipLevel, dstX, dstY);

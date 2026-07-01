@@ -36,6 +36,8 @@ compileJava {
 sourceSets {
     main {
         java {
+            // Retired in 26.2: TextureAtlasUploadMixins captures TextureAtlas.upload(...) and
+            // defers native replay through TextureUploadReplay, so do not package this no-op.
             exclude 'com/radiance/mixins/vanilla_resource_tracker/SpriteAtlasTextureMixins.java'
             exclude 'com/radiance/mixins/vanilla_resource_tracker/TextureUtilMixins.java'
             // 26.2 replaced AbstractTexture GL ids with GpuTexture ownership; keep disabled until
@@ -47,20 +49,10 @@ sourceSets {
             // 26.2 split draw state between StagedVertexBuffer, PreparedRenderType, and RenderPass;
             // the old BufferRenderer.drawWithGlobalProgram hook has no safe one-file replacement.
             exclude 'com/radiance/mixins/vulkan_render_integration/BufferRendererMixins.java'
-            // 26.2 clouds use encoded face buffers and RenderPipelines, not the old mesh consumer path.
-            exclude 'com/radiance/mixins/vulkan_render_integration/CloudRendererMixins.java'
-            // 26.2 debug setup moved into GlDevice; keep the old GLX-named hook disabled until the
-            // startup bridge is validated as part of a renderer lifecycle pass.
-            exclude 'com/radiance/mixins/vulkan_render_integration/GLXMixins.java'
-            // 26.2 Uniform is an interface backed by samplers/UBOs/UTBs, without the old value buffers.
-            exclude 'com/radiance/mixins/vulkan_render_integration/GlUniformMixins.java'
-            exclude 'com/radiance/mixins/vulkan_render_integration/RenderPhaseLightmapMixins.java'
-            exclude 'com/radiance/mixins/vulkan_render_integration/RenderPhaseMixins.java'
-            exclude 'com/radiance/mixins/vulkan_render_integration/RenderPhaseTargetMixins.java'
-            // 26.2 moved frame present, crosshair, and max texture handling out of RenderSystem.
-            exclude 'com/radiance/mixins/vulkan_render_integration/RenderSystemMixins.java'
             // 26.2 texture allocation is handled by GpuDeviceTextureMixins, not TextureUtil GL ids.
             exclude 'com/radiance/mixins/vulkan_render_integration/TextureUtilMixins.java'
+            // Obsolete in the 26.2 port: no current code references this sun.misc.Unsafe helper,
+            // and reflective Unsafe access is not needed for the restored mixin paths.
             exclude 'com/radiance/client/UnsafeManager.java'
         }
     }

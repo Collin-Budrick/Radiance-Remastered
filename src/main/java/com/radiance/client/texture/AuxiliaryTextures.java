@@ -37,7 +37,7 @@ public enum AuxiliaryTextures {
         return List.of(specularIdentifier);
     }, INativeImageExt::radiance$getSpecularNativeImage,
         INativeImageExt::radiance$setSpecularNativeImage, source -> 0,
-        TextureTracker.GLID2SpecularGLID),
+        TextureTracker.textureHandleToSpecularHandle),
     NORMAL("normal", "_n", (identifier, source) -> {
         String namespace = identifier.getNamespace();
         String path = identifier.getPath();
@@ -53,7 +53,7 @@ public enum AuxiliaryTextures {
     }, INativeImageExt::radiance$getNormalNativeImage,
         INativeImageExt::radiance$setNormalNativeImage,
         AuxiliaryTextures::defaultNormalPixel,
-        TextureTracker.GLID2NormalGLID),
+        TextureTracker.textureHandleToNormalHandle),
     FLAG(
         "flag", "_f", (identifier, source) -> {
         String namespace = identifier.getNamespace();
@@ -70,7 +70,7 @@ public enum AuxiliaryTextures {
         return List.of(flagIdentifier);
     }, INativeImageExt::radiance$getFlagNativeImage,
         INativeImageExt::radiance$setFlagNativeImage, source -> 0,
-        TextureTracker.GLID2FlagGLID);
+        TextureTracker.textureHandleToFlagHandle);
 
     private static final List<AuxiliaryTextures> ALL_TEXTURES = Collections.unmodifiableList(
         Arrays.stream(values()).collect(Collectors.toList()));
@@ -83,18 +83,18 @@ public enum AuxiliaryTextures {
     private final Setter setter;
     private final DefaultValueProvider defaultValueProvider;
     private final String name;
-    private final Map<Integer, Integer> GLIDMapping;
+    private final Map<Integer, Integer> textureHandleMapping;
 
     AuxiliaryTextures(String name, String suffix,
         IdentifierCandidateProvider identifierCandidateProvider, Getter getter, Setter setter,
-        DefaultValueProvider defaultValueProvider, Map<Integer, Integer> GLIDMapping) {
+        DefaultValueProvider defaultValueProvider, Map<Integer, Integer> textureHandleMapping) {
         this.suffix = suffix;
         this.identifierCandidateProvider = identifierCandidateProvider;
         this.getter = getter;
         this.setter = setter;
         this.defaultValueProvider = defaultValueProvider;
         this.name = name;
-        this.GLIDMapping = GLIDMapping;
+        this.textureHandleMapping = textureHandleMapping;
     }
 
     public static boolean isAuxiliaryTexture(Identifier identifier) {
@@ -153,7 +153,7 @@ public enum AuxiliaryTextures {
 
     public static void loadAndUpload(NativeImage source, GpuTexture targetTexture, int level,
         int offsetX, int offsetY) {
-        int targetId = TextureTracker.getOrRegisterGpuTexture(targetTexture);
+        int targetId = TextureTracker.getOrRegisterTextureHandle(targetTexture);
         INativeImageExt sourceExt = (INativeImageExt) (Object) source;
         loadAndUpload(source, sourceExt, targetId, level, offsetX, offsetY, 0, 0,
             source.getWidth(), source.getHeight());
@@ -178,11 +178,12 @@ public enum AuxiliaryTextures {
                 int auxiliaryTargetId;
 
                 // ensure the texture exists
-                TextureTracker.Texture texture = TextureTracker.GLID2Texture.get(targetId);
+                TextureTracker.Texture texture = TextureTracker.textureHandleToTexture.get(
+                    targetId);
                 if (texture == null) {
                     return;
                 }
-                if (!auxiliaryTexture.GLIDMapping.containsKey(targetId)) {
+                if (!auxiliaryTexture.textureHandleMapping.containsKey(targetId)) {
                     auxiliaryTargetId = TextureProxy.generateTextureId();
 //                    System.out.println(
 //                        "generate " + auxiliaryTexture.name + " texture for " + targetId + ": "
@@ -190,20 +191,20 @@ public enum AuxiliaryTextures {
 
                     TextureProxy.prepareImage(auxiliaryTargetId, texture.maxLayer(),
                         texture.width(), texture.height(), texture.format());
-                    TextureTracker.GLID2Texture.put(auxiliaryTargetId, texture);
-                    auxiliaryTexture.GLIDMapping.put(targetId, auxiliaryTargetId);
+                    TextureTracker.textureHandleToTexture.put(auxiliaryTargetId, texture);
+                    auxiliaryTexture.textureHandleMapping.put(targetId, auxiliaryTargetId);
                 } else {
-                    auxiliaryTargetId = auxiliaryTexture.GLIDMapping.get(targetId);
+                    auxiliaryTargetId = auxiliaryTexture.textureHandleMapping.get(targetId);
 
-                    TextureTracker.Texture auxiliaryTrackerTexture = TextureTracker.GLID2Texture.get(
-                        auxiliaryTargetId);
+                    TextureTracker.Texture auxiliaryTrackerTexture =
+                        TextureTracker.textureHandleToTexture.get(auxiliaryTargetId);
                     if (auxiliaryTrackerTexture == null
                         || texture.width() != auxiliaryTrackerTexture.width()
                         || texture.height() != auxiliaryTrackerTexture.height()
                         || texture.format() != auxiliaryTrackerTexture.format()) {
                         TextureProxy.prepareImage(auxiliaryTargetId, texture.maxLayer(),
                             texture.width(), texture.height(), texture.format());
-                        TextureTracker.GLID2Texture.put(auxiliaryTargetId, texture);
+                        TextureTracker.textureHandleToTexture.put(auxiliaryTargetId, texture);
                     }
                 }
 
@@ -261,7 +262,7 @@ public enum AuxiliaryTextures {
                         unpackSkipPixels, unpackSkipRows, regionWidth, regionHeight);
                     if (LOGGED_AUXILIARY_UPLOAD.compareAndSet(false, true)) {
                         RadianceClient.LOGGER.info(
-                            "Radiance auxiliary texture bridge: initialized {} texture for {} as native id {} mapped from {}",
+                            "Radiance auxiliary texture bridge: initialized {} texture for {} as Radiance handle {} mapped from {}",
                             auxiliaryTexture.name, textureIdentifier, auxiliaryTargetId, targetId);
                     }
                 } finally {

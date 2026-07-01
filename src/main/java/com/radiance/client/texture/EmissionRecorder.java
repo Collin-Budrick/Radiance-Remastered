@@ -20,7 +20,7 @@ public final class EmissionRecorder {
             return null;
         }
 
-        TextureTracker.Texture texture = TextureTracker.GLID2Texture.get(textureId);
+        TextureTracker.Texture texture = TextureTracker.textureHandleToTexture.get(textureId);
         if (texture == null || texture.width() <= 0 || texture.height() <= 0) {
             return null;
         }

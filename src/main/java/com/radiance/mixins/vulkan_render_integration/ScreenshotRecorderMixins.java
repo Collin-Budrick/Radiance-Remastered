@@ -25,7 +25,7 @@ public class ScreenshotRecorderMixins {
             return;
         }
 
-        callback.accept(RendererProxy.takeScreenshotWithoutUI());
+        callback.accept(RendererProxy.takeScreenshotWithNativeOverlay());
         ci.cancel();
     }
 
@@ -40,7 +40,7 @@ public class ScreenshotRecorderMixins {
             return;
         }
 
-        callback.accept(RendererProxy.takeScreenshotWithoutUI());
+        callback.accept(RendererProxy.takeScreenshotWithNativeOverlay());
         ci.cancel();
     }
 }

@@ -5,6 +5,10 @@ import java.nio.IntBuffer;
 
 public interface IGlUniformExt {
 
+    default boolean radiance$hasCpuDataValue() {
+        return true;
+    }
+
     int radiance$getDataTypeValue();
 
     int radiance$getCountValue();
@@ -12,4 +16,24 @@ public interface IGlUniformExt {
     IntBuffer radiance$getIntDataValue();
 
     FloatBuffer radiance$getFloatDataValue();
+
+    default int radiance$getBlockBindingValue() {
+        return -1;
+    }
+
+    default int radiance$getLocationValue() {
+        return -1;
+    }
+
+    default int radiance$getSamplerIndexValue() {
+        return -1;
+    }
+
+    default int radiance$getTextureValue() {
+        return 0;
+    }
+
+    default String radiance$getFormatNameValue() {
+        return null;
+    }
 }

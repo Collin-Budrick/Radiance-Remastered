@@ -44,7 +44,7 @@ public final class TextureResourceBridge {
             return 0;
         }
 
-        Integer trackedId = TextureTracker.textureID2GLID.get(identifier);
+        Integer trackedId = TextureTracker.identifierToTextureHandle.get(identifier);
         if (trackedId != null && trackedId != 0) {
             return trackedId;
         }
@@ -133,7 +133,7 @@ public final class TextureResourceBridge {
         int srcSizeInBytes = image.getWidth() * image.getHeight() * image.format().components();
         TextureProxy.queueUpload(image.getPointer(), srcSizeInBytes, image.getWidth(), id, 0, 0,
             0, 0, image.getWidth(), image.getHeight(), 0);
-        TextureTracker.textureID2GLID.put(identifier, id);
+        TextureTracker.rememberTextureHandle(identifier, id);
         return id;
     }
 }

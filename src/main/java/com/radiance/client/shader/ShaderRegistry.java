@@ -95,7 +95,10 @@ public final class ShaderRegistry {
         int offset = 0;
 
         for (Uniform uniform : uniforms) {
-            IGlUniformExt ext = (IGlUniformExt) (Object) uniform;
+            if (!((Object) uniform instanceof IGlUniformExt ext)
+                || !ext.radiance$hasCpuDataValue()) {
+                continue;
+            }
             int dataType = ext.radiance$getDataTypeValue();
             int componentCount = getComponentCount(dataType);
             ShaderField.Kind kind = getKind(dataType);

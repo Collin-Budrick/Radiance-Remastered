@@ -36,12 +36,12 @@ public class CommandEncoderTextureMixins {
 
         TextureTracker.registerTextureIdentifier(identifier, texture);
 
-        Integer trackedTargetId = TextureTracker.GPU_TEXTURE2GLID.get(texture);
+        int trackedTargetId = TextureTracker.textureHandle(texture);
         int targetId = imageExt.radiance$getTargetID();
-        if (targetId <= 0 || trackedTargetId == null || trackedTargetId != targetId) {
+        if (targetId <= 0 || trackedTargetId == 0 || trackedTargetId != targetId) {
             targetId = TextureTracker.shouldAllowSmallTexture(identifier, texture)
-                ? TextureTracker.getOrRegisterGuiTexture(texture)
-                : TextureTracker.getOrRegisterGpuTexture(texture);
+                ? TextureTracker.getOrRegisterGuiTextureHandle(texture)
+                : TextureTracker.getOrRegisterTextureHandle(texture);
         }
         if (targetId == 0) {
             return;

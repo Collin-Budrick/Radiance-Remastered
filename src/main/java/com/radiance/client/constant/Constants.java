@@ -43,9 +43,8 @@ public class Constants {
 
     public enum DrawModes {
         LINES(PrimitiveTopology.LINES, 0),
-        LINE_STRIP(PrimitiveTopology.DEBUG_LINE_STRIP, 1),
+        DEBUG_LINE_STRIP(PrimitiveTopology.DEBUG_LINE_STRIP, 1),
         DEBUG_LINES(PrimitiveTopology.DEBUG_LINES, 2),
-        DEBUG_LINE_STRIP(PrimitiveTopology.DEBUG_LINE_STRIP, 3),
         TRIANGLES(PrimitiveTopology.TRIANGLES, 4),
         TRIANGLE_STRIP(PrimitiveTopology.TRIANGLE_STRIP, 5),
         TRIANGLE_FAN(PrimitiveTopology.TRIANGLE_FAN, 6),
@@ -87,7 +86,10 @@ public class Constants {
             com.mojang.blaze3d.vertex.DefaultVertexFormat.POSITION_TEX_LIGHTMAP_COLOR, 2),
         POSITION(com.mojang.blaze3d.vertex.DefaultVertexFormat.POSITION, 3),
         POSITION_COLOR(com.mojang.blaze3d.vertex.DefaultVertexFormat.POSITION_COLOR, 4),
-        LINES(com.mojang.blaze3d.vertex.DefaultVertexFormat.POSITION_COLOR_LINE_WIDTH, 5),
+        POSITION_COLOR_LINE_WIDTH(
+            com.mojang.blaze3d.vertex.DefaultVertexFormat.POSITION_COLOR_LINE_WIDTH, 5),
+        POSITION_COLOR_NORMAL_LINE_WIDTH(
+            com.mojang.blaze3d.vertex.DefaultVertexFormat.POSITION_COLOR_NORMAL_LINE_WIDTH, 5),
         POSITION_COLOR_LIGHT(com.mojang.blaze3d.vertex.DefaultVertexFormat.POSITION_COLOR_LIGHTMAP, 6),
         POSITION_TEXTURE(com.mojang.blaze3d.vertex.DefaultVertexFormat.POSITION_TEX, 7),
         POSITION_TEXTURE_COLOR(com.mojang.blaze3d.vertex.DefaultVertexFormat.POSITION_TEX_COLOR, 8),

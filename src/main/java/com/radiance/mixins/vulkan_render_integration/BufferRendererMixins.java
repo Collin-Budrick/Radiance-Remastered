@@ -1,18 +1,16 @@
 package com.radiance.mixins.vulkan_render_integration;
 
-import net.minecraft.client.renderer.StagedVertexBuffer;
-import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+/**
+ * Retired 26.2 buffer draw hook.
+ *
+ * <p>The old upstream target {@code BufferRenderer.drawWithGlobalProgram(BuiltBuffer)}
+ * is gone. Radiance's 26.2 draw capture lives in
+ * {@code PreparedRenderTypeDrawCaptureMixins}, which observes
+ * {@code PreparedRenderType.drawFromBuffer(...)} and only cancels vanilla when a
+ * registered native replay bridge accepts the packet.
+ */
+public final class BufferRendererMixins {
 
-@Mixin(StagedVertexBuffer.class)
-public class BufferRendererMixins {
-
-    @Inject(method = "upload()V", at = @At(value = "TAIL"))
-    private void radiance$afterStagedUpload(CallbackInfo ci) {
-        // Retired stub: keep excluded unless a real staged-buffer capture is restored.
-        // Upstream BufferRenderer.drawWithGlobalProgram(BuiltBuffer)V is gone in 26.2.
-        // StagedVertexBuffer.upload()V is the surviving upload boundary.
+    private BufferRendererMixins() {
     }
 }

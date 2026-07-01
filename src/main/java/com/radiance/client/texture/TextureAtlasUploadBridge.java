@@ -17,9 +17,13 @@ public final class TextureAtlasUploadBridge {
     private TextureAtlasUploadBridge() {
     }
 
+    // TextureAtlas.upload already wrote the atlas into Mojang's GpuTexture. This bridge only
+    // records sprite identity and image data; native handle allocation/upload is deferred through
+    // TextureUploadReplay.replayAll() after the Radiance renderer lifecycle is active.
     public static void captureAtlas(Identifier atlasLocation, GpuTexture atlasTexture,
         List<TextureAtlasSprite> sprites) {
-        if (atlasLocation == null || atlasTexture == null || sprites == null || sprites.isEmpty()) {
+        if (atlasLocation == null || atlasTexture == null || atlasTexture.isClosed()
+            || sprites == null || sprites.isEmpty()) {
             return;
         }
 
