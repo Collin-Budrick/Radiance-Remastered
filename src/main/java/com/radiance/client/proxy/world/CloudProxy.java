@@ -4,6 +4,8 @@ import com.radiance.client.RadianceClient;
 import com.radiance.client.RendererAvailability;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.ArrayList;
+import java.util.List;
 import org.lwjgl.system.MemoryUtil;
 
 public final class CloudProxy {
@@ -15,6 +17,9 @@ public final class CloudProxy {
     private static final int NATIVE_DECLINED_UNSUPPORTED_PACKET = -2;
     private static final int NATIVE_DECLINED_NATIVE_ERROR = -3;
     private static final int NATIVE_STORED_NO_DRAW = -4;
+    private static final int NATIVE_REPLAYED = NATIVE_ACCEPTED;
+    private static final int NATIVE_FALLBACK_UNSUPPORTED = NATIVE_DECLINED_UNSUPPORTED_PACKET;
+    private static final int NATIVE_FALLBACK_INVALIDATED = NATIVE_DECLINED_INVALID_PACKET;
 
     private static volatile boolean nativeSubmitUnavailable;
     private static volatile boolean loggedNativeSubmitUnavailable;
@@ -122,6 +127,44 @@ public final class CloudProxy {
         }
     }
 
+    public static List<NormalizedCloudFace> normalizeEncodedFaces(ByteBuffer encodedFaces,
+        int encodedFaceByteCount, int radiusCells) {
+        if (encodedFaces == null || encodedFaceByteCount <= 0
+            || encodedFaceByteCount % ENCODED_FACE_STRIDE_BYTES != 0
+            || encodedFaceByteCount > encodedFaces.capacity()) {
+            return List.of();
+        }
+
+        ByteBuffer faces = encodedFaces.duplicate().order(ByteOrder.nativeOrder());
+        faces.position(0);
+        faces.limit(encodedFaceByteCount);
+
+        List<NormalizedCloudFace> normalizedFaces =
+            new ArrayList<>(encodedFaceByteCount / ENCODED_FACE_STRIDE_BYTES);
+        for (int offset = 0; offset < encodedFaceByteCount; offset += ENCODED_FACE_STRIDE_BYTES) {
+            int rawX = Byte.toUnsignedInt(faces.get(offset));
+            int rawZ = Byte.toUnsignedInt(faces.get(offset + 1));
+            int rawFlags = Byte.toUnsignedInt(faces.get(offset + 2));
+            int direction = rawFlags & 0x07;
+            boolean oddCellX = (rawFlags & 0x80) != 0;
+            boolean oddCellZ = (rawFlags & 0x40) != 0;
+            int relativeCellX = decodeCellComponent(rawX, oddCellX);
+            int relativeCellZ = decodeCellComponent(rawZ, oddCellZ);
+
+            normalizedFaces.add(new NormalizedCloudFace(relativeCellX, relativeCellZ, direction,
+                oddCellX, oddCellZ, (rawFlags & 0x10) != 0, (rawFlags & 0x20) != 0,
+                rawFlags, direction <= 5 && (rawFlags & 0x08) == 0
+                    && relativeCellX >= -radiusCells && relativeCellX <= radiusCells
+                    && relativeCellZ >= -radiusCells && relativeCellZ <= radiusCells));
+        }
+        return List.copyOf(normalizedFaces);
+    }
+
+    private static int decodeCellComponent(int encodedHalfCell, boolean oddCell) {
+        int signedHalfCell = encodedHalfCell < 128 ? encodedHalfCell : encodedHalfCell - 256;
+        return (signedHalfCell << 1) | (oddCell ? 1 : 0);
+    }
+
     public record EncodedCloudPacket(int colorArgb, int cloudStatus, boolean fancy,
                                      int relativeCameraPosition, int textureWidth,
                                      int textureHeight, int cellX, int cellZ, int radiusCells,
@@ -130,7 +173,13 @@ public final class CloudProxy {
                                      float cellOffsetZ, double cameraX, double cameraY,
                                      double cameraZ, float bottomY, long gameTime,
                                      float partialTicks, ByteBuffer encodedFaces,
-                                     int encodedFaceByteCount) {
+                                     int encodedFaceByteCount,
+                                     List<NormalizedCloudFace> normalizedFaces) {
+
+        public EncodedCloudPacket {
+            normalizedFaces = normalizedFaces == null ? List.of()
+                : List.copyOf(normalizedFaces);
+        }
 
         public boolean hasFaces() {
             return encodedFaces != null && encodedFaceByteCount > 0 && quadCount > 0;
@@ -139,8 +188,14 @@ public final class CloudProxy {
         public boolean hasValidShape() {
             return hasFaces() && encodedFaceByteCount % ENCODED_FACE_STRIDE_BYTES == 0
                 && encodedFaceByteCount / ENCODED_FACE_STRIDE_BYTES == quadCount
-                && encodedFaceByteCount <= encodedFaces.capacity();
+                && encodedFaceByteCount <= encodedFaces.capacity()
+                && normalizedFaces.size() == quadCount;
         }
+    }
+
+    public record NormalizedCloudFace(int relativeCellX, int relativeCellZ, int direction,
+                                      boolean oddCellX, boolean oddCellZ, boolean nearCamera,
+                                      boolean flat, int rawFlags, boolean supported) {
     }
 
     public record SubmitResult(SubmitStatus status, int nativeStatus) {
@@ -175,10 +230,10 @@ public final class CloudProxy {
 
         private static SubmitStatus fromNative(int nativeStatus) {
             return switch (nativeStatus) {
-                case NATIVE_ACCEPTED -> ACCEPTED;
+                case NATIVE_REPLAYED -> ACCEPTED;
                 case NATIVE_DECLINED_NO_RENDERER -> DECLINED_NO_RENDERER;
-                case NATIVE_DECLINED_INVALID_PACKET -> DECLINED_INVALID_PACKET;
-                case NATIVE_DECLINED_UNSUPPORTED_PACKET -> DECLINED_UNSUPPORTED_PACKET;
+                case NATIVE_FALLBACK_INVALIDATED -> DECLINED_INVALID_PACKET;
+                case NATIVE_FALLBACK_UNSUPPORTED -> DECLINED_UNSUPPORTED_PACKET;
                 case NATIVE_DECLINED_NATIVE_ERROR -> DECLINED_NATIVE_ERROR;
                 case NATIVE_STORED_NO_DRAW -> STORED_NO_DRAW;
                 default -> UNKNOWN_NATIVE_STATUS;

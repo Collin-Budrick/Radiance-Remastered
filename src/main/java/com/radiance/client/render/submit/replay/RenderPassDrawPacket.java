@@ -14,6 +14,7 @@ import com.mojang.blaze3d.textures.GpuSampler;
 import com.mojang.blaze3d.textures.GpuTexture;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import com.radiance.client.constant.VulkanConstants;
 import com.radiance.client.proxy.vulkan.BufferProxy;
 import com.radiance.client.proxy.vulkan.DrawCommandProxy;
 import com.radiance.client.renderpass.RenderPassPipelineState;
@@ -43,9 +44,6 @@ public record RenderPassDrawPacket(RenderTypeIdentity renderType,
                                    RenderFlags flags,
                                     FallbackReason fallbackReason,
                                     List<FallbackDetail> fallbackDetails) {
-
-    private static final Identifier LINES_PIPELINE =
-        Identifier.fromNamespaceAndPath("minecraft", "pipeline/lines");
 
     public RenderPassDrawPacket {
         textures = textures == null ? List.of() : List.copyOf(textures);
@@ -228,7 +226,13 @@ public record RenderPassDrawPacket(RenderTypeIdentity renderType,
                                   String polygonMode, boolean cull,
                                   boolean wantsDepthTexture, int sortKey,
                                   List<VertexFormat> vertexFormats,
+                                  RenderPassPipelineState.DepthState depth,
+                                  List<RenderPassPipelineState.ColorTargetStateSnapshot> colorTargets,
                                   NativePipelineReference nativeReference) {
+
+        public PipelineBinding {
+            colorTargets = colorTargets == null ? List.of() : List.copyOf(colorTargets);
+        }
 
         static PipelineBinding capture(RenderPipeline pipeline,
             RenderPassPipelineState.PipelineState state) {
@@ -239,6 +243,8 @@ public record RenderPassDrawPacket(RenderTypeIdentity renderType,
                     null, state == null ? null : state.polygonMode(),
                     state != null && state.cull(), state != null && state.wantsDepthTexture(),
                     state == null ? 0 : state.sortKey(), List.of(),
+                    state == null ? null : state.depth(),
+                    state == null ? List.of() : state.colorTargets(),
                     NativePipelineReference.missing());
             }
             VertexFormat[] vertexFormatBindings = pipeline.getVertexFormatBindings();
@@ -253,7 +259,9 @@ public record RenderPassDrawPacket(RenderTypeIdentity renderType,
                 state == null ? null : state.polygonMode(),
                 state != null && state.cull(),
                 state != null && state.wantsDepthTexture(), pipeline.getSortKey(),
-                vertexFormats, RenderPassNativeResourceMirror.capturePipeline(pipeline));
+                vertexFormats, state == null ? null : state.depth(),
+                state == null ? List.of() : state.colorTargets(),
+                RenderPassNativeResourceMirror.capturePipeline(pipeline));
         }
     }
 
@@ -357,6 +365,182 @@ public record RenderPassDrawPacket(RenderTypeIdentity renderType,
                 : new ScissorBinding(scissorState.enabled(), scissorState.x(), scissorState.y(),
                     scissorState.width(), scissorState.height());
         }
+    }
+
+    public record StateBinding(boolean blendEnabled, int srcColorBlendFactor,
+                               int srcAlphaBlendFactor, int dstColorBlendFactor,
+                               int dstAlphaBlendFactor, int colorBlendOp, int alphaBlendOp,
+                               int colorWriteMask, boolean depthTestEnabled,
+                               boolean depthWriteEnabled, int depthCompareOp,
+                               boolean depthBiasEnabled, float depthBiasSlopeFactor,
+                               float depthBiasConstantFactor, int cullMode) {
+
+        static StateBinding capture(PipelineBinding pipeline) {
+            RenderPassPipelineState.ColorTargetStateSnapshot colorTarget =
+                pipeline == null || pipeline.colorTargets().isEmpty()
+                    ? null : pipeline.colorTargets().getFirst();
+            RenderPassPipelineState.BlendState blend = colorTarget == null ? null
+                : colorTarget.blend();
+            RenderPassPipelineState.BlendEquationState color = blend == null ? null
+                : blend.color();
+            RenderPassPipelineState.BlendEquationState alpha = blend == null ? null
+                : blend.alpha();
+            RenderPassPipelineState.DepthState depth = pipeline == null ? null
+                : pipeline.depth();
+            return new StateBinding(
+                blend != null && blend.enabled(),
+                blendFactor(color == null ? null : color.sourceFactor(), ONE),
+                blendFactor(alpha == null ? null : alpha.sourceFactor(), ONE),
+                blendFactor(color == null ? null : color.destFactor(), ZERO),
+                blendFactor(alpha == null ? null : alpha.destFactor(), ZERO),
+                blendOp(color == null ? null : color.op()),
+                blendOp(alpha == null ? null : alpha.op()),
+                colorWriteMask(colorTarget),
+                depthTestEnabled(depth),
+                depth != null && depth.writeDepth(),
+                depthCompareOp(depth),
+                depth != null && (depth.depthBiasScaleFactor() != 0.0F
+                    || depth.depthBiasConstant() != 0.0F),
+                depth == null ? 0.0F : depth.depthBiasScaleFactor(),
+                depth == null ? 0.0F : depth.depthBiasConstant(),
+                pipeline != null && pipeline.cull() ? CULL_BACK : CULL_NONE);
+        }
+
+        private static int colorWriteMask(
+            RenderPassPipelineState.ColorTargetStateSnapshot colorTarget) {
+            if (colorTarget == null) {
+                return COLOR_WRITE_RGBA;
+            }
+            int writeMask = colorTarget.writeMask();
+            if (writeMask != 0) {
+                return writeMask;
+            }
+            int mask = 0;
+            if (colorTarget.writeRed()) {
+                mask |= VulkanConstants.VkColorComponentFlagBits
+                    .VK_COLOR_COMPONENT_R_BIT.getValue();
+            }
+            if (colorTarget.writeGreen()) {
+                mask |= VulkanConstants.VkColorComponentFlagBits
+                    .VK_COLOR_COMPONENT_G_BIT.getValue();
+            }
+            if (colorTarget.writeBlue()) {
+                mask |= VulkanConstants.VkColorComponentFlagBits
+                    .VK_COLOR_COMPONENT_B_BIT.getValue();
+            }
+            if (colorTarget.writeAlpha()) {
+                mask |= VulkanConstants.VkColorComponentFlagBits
+                    .VK_COLOR_COMPONENT_A_BIT.getValue();
+            }
+            return mask;
+        }
+
+        private static boolean depthTestEnabled(RenderPassPipelineState.DepthState depth) {
+            if (depth == null || depth.depthTest() == null) {
+                return false;
+            }
+            String normalized = normalize(depth.depthTest());
+            return !normalized.equals("NO_DEPTH_TEST")
+                && !normalized.equals("NO_DEPTH")
+                && !normalized.equals("NONE");
+        }
+
+        private static int depthCompareOp(RenderPassPipelineState.DepthState depth) {
+            if (!depthTestEnabled(depth)) {
+                return COMPARE_ALWAYS;
+            }
+            String normalized = normalize(depth.depthTest());
+            if (normalized.contains("NEVER")) {
+                return VulkanConstants.VkCompareOp.VK_COMPARE_OP_NEVER.getValue();
+            }
+            if (normalized.contains("LESS_OR_EQUAL") || normalized.contains("LEQUAL")) {
+                return VulkanConstants.VkCompareOp.VK_COMPARE_OP_LESS_OR_EQUAL.getValue();
+            }
+            if (normalized.contains("GREATER_OR_EQUAL") || normalized.contains("GEQUAL")) {
+                return VulkanConstants.VkCompareOp.VK_COMPARE_OP_GREATER_OR_EQUAL.getValue();
+            }
+            if (normalized.contains("NOT_EQUAL") || normalized.contains("NOTEQUAL")) {
+                return VulkanConstants.VkCompareOp.VK_COMPARE_OP_NOT_EQUAL.getValue();
+            }
+            if (normalized.contains("LESS")) {
+                return VulkanConstants.VkCompareOp.VK_COMPARE_OP_LESS.getValue();
+            }
+            if (normalized.contains("GREATER")) {
+                return VulkanConstants.VkCompareOp.VK_COMPARE_OP_GREATER.getValue();
+            }
+            if (normalized.contains("EQUAL")) {
+                return VulkanConstants.VkCompareOp.VK_COMPARE_OP_EQUAL.getValue();
+            }
+            return COMPARE_ALWAYS;
+        }
+
+        private static int blendFactor(String factor, int fallback) {
+            return switch (normalize(factor)) {
+                case "ZERO" -> ZERO;
+                case "ONE" -> ONE;
+                case "SRC_COLOR", "SOURCE_COLOR" ->
+                    VulkanConstants.VkBlendFactor.VK_BLEND_FACTOR_SRC_COLOR.getValue();
+                case "ONE_MINUS_SRC_COLOR", "ONE_MINUS_SOURCE_COLOR" ->
+                    VulkanConstants.VkBlendFactor.VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR.getValue();
+                case "DST_COLOR", "DEST_COLOR", "DESTINATION_COLOR" ->
+                    VulkanConstants.VkBlendFactor.VK_BLEND_FACTOR_DST_COLOR.getValue();
+                case "ONE_MINUS_DST_COLOR", "ONE_MINUS_DEST_COLOR",
+                    "ONE_MINUS_DESTINATION_COLOR" ->
+                    VulkanConstants.VkBlendFactor.VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR.getValue();
+                case "SRC_ALPHA", "SOURCE_ALPHA" ->
+                    VulkanConstants.VkBlendFactor.VK_BLEND_FACTOR_SRC_ALPHA.getValue();
+                case "ONE_MINUS_SRC_ALPHA", "ONE_MINUS_SOURCE_ALPHA" ->
+                    VulkanConstants.VkBlendFactor.VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA.getValue();
+                case "DST_ALPHA", "DEST_ALPHA", "DESTINATION_ALPHA" ->
+                    VulkanConstants.VkBlendFactor.VK_BLEND_FACTOR_DST_ALPHA.getValue();
+                case "ONE_MINUS_DST_ALPHA", "ONE_MINUS_DEST_ALPHA",
+                    "ONE_MINUS_DESTINATION_ALPHA" ->
+                    VulkanConstants.VkBlendFactor.VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA.getValue();
+                case "CONSTANT_COLOR" ->
+                    VulkanConstants.VkBlendFactor.VK_BLEND_FACTOR_CONSTANT_COLOR.getValue();
+                case "ONE_MINUS_CONSTANT_COLOR" ->
+                    VulkanConstants.VkBlendFactor.VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR.getValue();
+                case "CONSTANT_ALPHA" ->
+                    VulkanConstants.VkBlendFactor.VK_BLEND_FACTOR_CONSTANT_ALPHA.getValue();
+                case "ONE_MINUS_CONSTANT_ALPHA" ->
+                    VulkanConstants.VkBlendFactor.VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA.getValue();
+                case "SRC_ALPHA_SATURATE", "SOURCE_ALPHA_SATURATE" ->
+                    VulkanConstants.VkBlendFactor.VK_BLEND_FACTOR_SRC_ALPHA_SATURATE.getValue();
+                default -> fallback;
+            };
+        }
+
+        private static int blendOp(String op) {
+            return switch (normalize(op)) {
+                case "SUBTRACT" ->
+                    VulkanConstants.VkBlendOp.VK_BLEND_OP_SUBTRACT.getValue();
+                case "REVERSE_SUBTRACT" ->
+                    VulkanConstants.VkBlendOp.VK_BLEND_OP_REVERSE_SUBTRACT.getValue();
+                case "MIN" -> VulkanConstants.VkBlendOp.VK_BLEND_OP_MIN.getValue();
+                case "MAX" -> VulkanConstants.VkBlendOp.VK_BLEND_OP_MAX.getValue();
+                default -> VulkanConstants.VkBlendOp.VK_BLEND_OP_ADD.getValue();
+            };
+        }
+
+        private static String normalize(String value) {
+            return value == null ? "" : value.trim().toUpperCase();
+        }
+
+        private static final int ZERO =
+            VulkanConstants.VkBlendFactor.VK_BLEND_FACTOR_ZERO.getValue();
+        private static final int ONE =
+            VulkanConstants.VkBlendFactor.VK_BLEND_FACTOR_ONE.getValue();
+        private static final int COMPARE_ALWAYS =
+            VulkanConstants.VkCompareOp.VK_COMPARE_OP_ALWAYS.getValue();
+        private static final int CULL_NONE =
+            VulkanConstants.VkCullMode.VK_CULL_MODE_NONE.getValue();
+        private static final int CULL_BACK =
+            VulkanConstants.VkCullMode.VK_CULL_MODE_BACK_BIT.getValue();
+        private static final int COLOR_WRITE_RGBA =
+            VulkanConstants.VkColorComponentFlagBits.VK_COLOR_COMPONENT_R_BIT.getValue()
+                | VulkanConstants.VkColorComponentFlagBits.VK_COLOR_COMPONENT_G_BIT.getValue()
+                | VulkanConstants.VkColorComponentFlagBits.VK_COLOR_COMPONENT_B_BIT.getValue()
+                | VulkanConstants.VkColorComponentFlagBits.VK_COLOR_COMPONENT_A_BIT.getValue();
     }
 
     public record TextureBinding(String name, Identifier identifier,
@@ -471,6 +655,7 @@ public record RenderPassDrawPacket(RenderTypeIdentity renderType,
                                   long pipelineSerial, int vertexFormatType, int drawMode,
                                  int indexType, int indexCount, int firstIndex,
                                  int vertexOffset, int firstInstance, int instanceCount,
+                                 StateBinding state,
                                  long uniformPtr, int uniformSize, ByteBuffer vertexPayload,
                                  ByteBuffer indexPayload) {
 
@@ -479,10 +664,12 @@ public record RenderPassDrawPacket(RenderTypeIdentity renderType,
             BufferBinding indexBuffer, IndexDrawInfo index, List<UniformBinding> uniforms,
             RenderFlags flags, ScissorBinding scissor) {
             boolean lineReplay = isBoundedLineReplay(renderType, outputTarget, pipeline);
+            boolean nonOpaqueEntityReplay = isBoundedNonOpaqueEntityReplay(renderType,
+                outputTarget, pipeline, flags);
             boolean solidOpaqueTarget = isSolidOpaque(flags)
                 && outputTarget != null
                 && outputTarget.failure() == null;
-            boolean supportedTarget = solidOpaqueTarget || lineReplay;
+            boolean supportedTarget = solidOpaqueTarget || lineReplay || nonOpaqueEntityReplay;
             NativeBufferReference vertexReference = vertexBuffer == null
                 || vertexBuffer.nativeReference() == null
                 ? NativeBufferReference.missing()
@@ -496,6 +683,7 @@ public record RenderPassDrawPacket(RenderTypeIdentity renderType,
                 ? NativePipelineReference.missing()
                 : pipeline.nativeReference();
             NativeUniformReference uniformReference = firstNativeUniform(uniforms);
+            StateBinding state = StateBinding.capture(pipeline);
             ByteBuffer vertexPayload = replayPayload(vertexBuffer == null ? null
                 : vertexBuffer.buffer(), requiredVertexPayloadSize(vertexBuffer, pipeline, index));
             ByteBuffer indexPayload = replayPayload(indexBuffer == null ? null
@@ -503,9 +691,12 @@ public record RenderPassDrawPacket(RenderTypeIdentity renderType,
 
             return new NativeDrawCall(
                 lineReplay ? DrawCommandProxy.RenderPass.TARGET_ITEM_ENTITY
-                    : solidOpaqueTarget ? DrawCommandProxy.RenderPass.TARGET_SOLID_OPAQUE : -1,
+                    : nonOpaqueEntityReplay
+                        ? DrawCommandProxy.RenderPass.TARGET_NON_OPAQUE_ENTITY
+                        : solidOpaqueTarget ? DrawCommandProxy.RenderPass.TARGET_SOLID_OPAQUE : -1,
                 supportedTarget,
                 lineReplay ? DrawCommandProxy.RenderPass.lineFlags()
+                    : nonOpaqueEntityReplay ? DrawCommandProxy.RenderPass.FLAG_INDEXED
                     : DrawCommandProxy.RenderPass.flags(solidOpaqueTarget, solidOpaqueTarget,
                         true),
                 scissor != null && scissor.enabled(),
@@ -529,6 +720,7 @@ public record RenderPassDrawPacket(RenderTypeIdentity renderType,
                 index == null ? 0 : index.baseVertex(),
                 index == null ? 0 : index.firstInstance(),
                 index == null ? 0 : index.instanceCount(),
+                state,
                 uniformReference.hasUniformPayload() ? uniformReference.uniformPtr() : 0L,
                 uniformReference.hasUniformPayload() ? uniformReference.uniformSize() : -1,
                 vertexPayload, indexPayload);
@@ -538,7 +730,23 @@ public record RenderPassDrawPacket(RenderTypeIdentity renderType,
             return new DrawCommandProxy.RenderPass.DrawPacket(target, flags, scissorEnabled,
                 scissorX, scissorY, scissorWidth, scissorHeight, vertexBufferId, indexBufferId,
                 shaderId, vertexFormatType, drawMode, indexType, indexCount, firstIndex,
-                vertexOffset, firstInstance, instanceCount, uniformPtr, uniformSize,
+                vertexOffset, firstInstance, instanceCount,
+                state == null ? false : state.blendEnabled(),
+                state == null ? StateBinding.ONE : state.srcColorBlendFactor(),
+                state == null ? StateBinding.ONE : state.srcAlphaBlendFactor(),
+                state == null ? StateBinding.ZERO : state.dstColorBlendFactor(),
+                state == null ? StateBinding.ZERO : state.dstAlphaBlendFactor(),
+                state == null ? 0 : state.colorBlendOp(),
+                state == null ? 0 : state.alphaBlendOp(),
+                state == null ? StateBinding.COLOR_WRITE_RGBA : state.colorWriteMask(),
+                state != null && state.depthTestEnabled(),
+                state != null && state.depthWriteEnabled(),
+                state == null ? StateBinding.COMPARE_ALWAYS : state.depthCompareOp(),
+                state != null && state.depthBiasEnabled(),
+                state == null ? 0.0F : state.depthBiasSlopeFactor(),
+                state == null ? 0.0F : state.depthBiasConstantFactor(),
+                state == null ? StateBinding.CULL_NONE : state.cullMode(),
+                uniformPtr, uniformSize,
                 vertexPayload, indexPayload);
         }
 
@@ -570,13 +778,58 @@ public record RenderPassDrawPacket(RenderTypeIdentity renderType,
             OutputTargetBinding outputTarget, PipelineBinding pipeline) {
             return renderType != null
                 && renderType.metadataAvailable()
-                && "lines".equals(renderType.name())
                 && pipeline != null
-                && LINES_PIPELINE.equals(pipeline.location())
                 && pipeline.primitiveTopology() == PrimitiveTopology.LINES
+                && vertexFormatType(pipeline)
+                    == DrawCommandProxy.RenderPass.VERTEX_FORMAT_POSITION_COLOR_NORMAL_LINE_WIDTH
                 && outputTarget != null
                 && outputTarget.failure() == null
                 && outputTarget.outputTarget() == OutputTarget.ITEM_ENTITY_TARGET;
+        }
+
+        private static boolean isBoundedNonOpaqueEntityReplay(RenderTypeIdentity renderType,
+            OutputTargetBinding outputTarget, PipelineBinding pipeline, RenderFlags flags) {
+            return renderType != null
+                && renderType.metadataAvailable()
+                && flags != null
+                && flags.metadataAvailable()
+                && !flags.outline()
+                && pipeline != null
+                && isKnownNonOpaqueEntityReplay(renderType, pipeline)
+                && pipeline.primitiveTopology() != PrimitiveTopology.LINES
+                && vertexFormatType(pipeline) == DrawCommandProxy.RenderPass.VERTEX_FORMAT_ENTITY
+                && outputTarget != null
+                && (outputTarget.failure() == null || isKnownGlintReplay(renderType, pipeline));
+        }
+
+        private static boolean isKnownNonOpaqueEntityReplay(RenderTypeIdentity renderType,
+            PipelineBinding pipeline) {
+            return pipeline != null
+                && (isKnownNonOpaqueEntityPipeline(pipeline.location())
+                    || isKnownGlintReplay(renderType, pipeline));
+        }
+
+        private static boolean isKnownNonOpaqueEntityPipeline(Identifier location) {
+            if (location == null) {
+                return false;
+            }
+            String value = location.toString();
+            return "minecraft:pipeline/eyes".equals(value)
+                || "minecraft:pipeline/entity_translucent".equals(value);
+        }
+
+        private static boolean isKnownGlintReplay(RenderTypeIdentity renderType,
+            PipelineBinding pipeline) {
+            if (renderType == null || pipeline == null || pipeline.location() == null) {
+                return false;
+            }
+            String pipelineName = pipeline.location().toString();
+            String renderTypeName = renderType.name();
+            return "minecraft:pipeline/glint".equals(pipelineName)
+                && ("glint".equals(renderTypeName)
+                    || "glint_translucent".equals(renderTypeName)
+                    || "entity_glint".equals(renderTypeName)
+                    || "armor_entity_glint".equals(renderTypeName));
         }
 
         private static int vertexFormatType(PipelineBinding pipeline) {

@@ -53,6 +53,7 @@
     "vulkan_render_integration.GpuDeviceBufferMixins",
     "vulkan_render_integration.GpuDeviceTextureMixins",
     "vulkan_render_integration.HeldItemRendererMixins",
+    "vulkan_render_integration.ItemFeatureRendererMixins",
     "vulkan_render_integration.ItemRendererMixins",
     "vulkan_render_integration.LightmapTextureManagerMixins",
     "vulkan_render_integration.LightningEntityRendererMixins",

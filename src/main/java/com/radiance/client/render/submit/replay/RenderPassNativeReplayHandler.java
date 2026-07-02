@@ -15,6 +15,10 @@ final class RenderPassNativeReplayHandler {
         ConcurrentHashMap.newKeySet();
     private static final Set<String> LOGGED_NATIVE_REPLAY_ACCEPTED =
         ConcurrentHashMap.newKeySet();
+    private static final Set<String> LOGGED_LINE_REPLAY_ACCEPTED =
+        ConcurrentHashMap.newKeySet();
+    private static final Set<String> LOGGED_ITEM_GLINT_REPLAY_ACCEPTED =
+        ConcurrentHashMap.newKeySet();
     private static volatile List<String> lastMissingFields = List.of();
 
     private RenderPassNativeReplayHandler() {
@@ -81,6 +85,64 @@ final class RenderPassNativeReplayHandler {
             pipelineLocation(packet), renderTypeName(packet), drawCall.shaderId(),
             drawCall.vertexFormatType(), drawCall.drawMode(), drawCall.indexCount(),
             drawCall.uniformSize());
+        logLineReplayAccepted(packet, drawCall);
+        logItemGlintReplayAccepted(packet, drawCall);
+    }
+
+    private static void logItemGlintReplayAccepted(RenderPassDrawPacket packet,
+        RenderPassDrawPacket.NativeDrawCall drawCall) {
+        if (!isItemGlintReplayAcceptance(packet, drawCall)) {
+            return;
+        }
+        String key = pipelineLocation(packet) + "|" + renderTypeName(packet);
+        if (!LOGGED_ITEM_GLINT_REPLAY_ACCEPTED.add(key)) {
+            return;
+        }
+        RadianceClient.LOGGER.info(
+            "RADIANCE_ITEM_GLINT_RENDERPASS_NATIVE_ACCEPTED_26_2 pipeline={} renderType={} target={} flags={} vertexFormat={} drawMode={} indexCount={} uniformSize={}",
+            pipelineLocation(packet), renderTypeName(packet), drawCall.target(),
+            drawCall.flags(), drawCall.vertexFormatType(), drawCall.drawMode(),
+            drawCall.indexCount(), drawCall.uniformSize());
+    }
+
+    private static void logLineReplayAccepted(RenderPassDrawPacket packet,
+        RenderPassDrawPacket.NativeDrawCall drawCall) {
+        if (!isLineReplayAcceptance(packet, drawCall)) {
+            return;
+        }
+        String key = pipelineLocation(packet) + "|" + renderTypeName(packet);
+        if (!LOGGED_LINE_REPLAY_ACCEPTED.add(key)) {
+            return;
+        }
+        RadianceClient.LOGGER.info(
+            "Radiance line replay proof: accepted native replay pipeline={} renderType={} target={} flags={} vertexFormat={} drawMode={} indexCount={} uniformSize={}",
+            pipelineLocation(packet), renderTypeName(packet), drawCall.target(),
+            drawCall.flags(), drawCall.vertexFormatType(), drawCall.drawMode(),
+            drawCall.indexCount(), drawCall.uniformSize());
+    }
+
+    private static boolean isLineReplayAcceptance(RenderPassDrawPacket packet,
+        RenderPassDrawPacket.NativeDrawCall drawCall) {
+        return "minecraft:pipeline/lines".equals(String.valueOf(pipelineLocation(packet)))
+            && drawCall.target() == DrawCommandProxy.RenderPass.TARGET_ITEM_ENTITY
+            && drawCall.flags() == DrawCommandProxy.RenderPass.lineFlags()
+            && drawCall.vertexFormatType()
+                == DrawCommandProxy.RenderPass.VERTEX_FORMAT_POSITION_COLOR_NORMAL_LINE_WIDTH
+            && drawCall.drawMode() == DrawCommandProxy.RenderPass.DRAW_MODE_LINES;
+    }
+
+    private static boolean isItemGlintReplayAcceptance(RenderPassDrawPacket packet,
+        RenderPassDrawPacket.NativeDrawCall drawCall) {
+        String renderType = renderTypeName(packet);
+        return drawCall != null
+            && drawCall.target() == DrawCommandProxy.RenderPass.TARGET_NON_OPAQUE_ENTITY
+            && drawCall.flags() == DrawCommandProxy.RenderPass.FLAG_INDEXED
+            && drawCall.vertexFormatType() == DrawCommandProxy.RenderPass.VERTEX_FORMAT_ENTITY
+            && "minecraft:pipeline/glint".equals(pipelineLocation(packet))
+            && ("glint".equals(renderType)
+                || "glint_translucent".equals(renderType)
+                || "entity_glint".equals(renderType)
+                || "armor_entity_glint".equals(renderType));
     }
 
     private static List<RenderPassDrawPacket.FallbackDetail> nativeReplayBlockers(
@@ -100,11 +162,29 @@ final class RenderPassNativeReplayHandler {
             return blockers;
         }
 
-        if (!isSolidOpaque(packet) && !isBoundedLineReplayTarget(packet, nativeDrawCall)) {
+        ReplayPassClassification replayPass = classifyReplayPass(packet, nativeDrawCall);
+        if (!replayPass.requirementsAvailable()) {
+            blockers.add(detail(
+                RenderPassDrawPacket.FallbackReason.MISSING_NATIVE_DRAW_PACKET_FIELDS,
+                "pipeline.nonOpaqueState",
+                "non-opaque render-pass replay candidate cannot be classified safely; missing "
+                    + replayPass.detail(),
+                true));
+        } else if (replayPass.nonOpaque()
+            && !isBoundedNonOpaqueEntityReplayTarget(nativeDrawCall)) {
+            blockers.add(detail(
+                RenderPassDrawPacket.FallbackReason.UNSUPPORTED_NATIVE_TARGET,
+                "pass." + replayPass.pass().logName(),
+                "non-opaque render-pass replay classified as " + replayPass.pass().logName()
+                    + " from packet-local state (" + replayPass.detail()
+                    + "), but no descriptor-correct TARGET_NON_OPAQUE_ENTITY packet was built",
+                false));
+        } else if (!replayPass.nativeSupported()) {
             blockers.add(detail(
                 RenderPassDrawPacket.FallbackReason.UNSUPPORTED_NATIVE_RENDER_FLAGS,
                 "flags",
-                "native supported subset is solid opaque indexed draws, plus bounded minecraft:pipeline/lines item-entity draws",
+                "native supported subset is solid opaque indexed draws, plus descriptor-correct item-entity line draws; "
+                    + replayPass.detail(),
                 false));
         }
         if (!nativeDrawCall.targetSupported() || nativeDrawCall.target() < 0) {
@@ -176,10 +256,138 @@ final class RenderPassNativeReplayHandler {
         RenderPassDrawPacket.NativeDrawCall nativeDrawCall) {
         return packet != null
             && nativeDrawCall != null
-            && "lines".equals(renderTypeName(packet))
-            && "minecraft:pipeline/lines".equals(pipelineLocation(packet))
             && nativeDrawCall.target() == DrawCommandProxy.RenderPass.TARGET_ITEM_ENTITY
-            && nativeDrawCall.flags() == DrawCommandProxy.RenderPass.lineFlags();
+            && nativeDrawCall.flags() == DrawCommandProxy.RenderPass.lineFlags()
+            && nativeDrawCall.drawMode() == DrawCommandProxy.RenderPass.DRAW_MODE_LINES
+            && nativeDrawCall.vertexFormatType()
+                == DrawCommandProxy.RenderPass.VERTEX_FORMAT_POSITION_COLOR_NORMAL_LINE_WIDTH;
+    }
+
+    private static boolean isBoundedNonOpaqueEntityReplayTarget(
+        RenderPassDrawPacket.NativeDrawCall nativeDrawCall) {
+        return nativeDrawCall != null
+            && nativeDrawCall.target() == DrawCommandProxy.RenderPass.TARGET_NON_OPAQUE_ENTITY
+            && nativeDrawCall.flags() == DrawCommandProxy.RenderPass.FLAG_INDEXED
+            && nativeDrawCall.vertexFormatType() == DrawCommandProxy.RenderPass.VERTEX_FORMAT_ENTITY
+            && (nativeDrawCall.drawMode() == DrawCommandProxy.RenderPass.DRAW_MODE_TRIANGLES
+                || nativeDrawCall.drawMode() == DrawCommandProxy.RenderPass.DRAW_MODE_QUADS);
+    }
+
+    private static ReplayPassClassification classifyReplayPass(RenderPassDrawPacket packet,
+        RenderPassDrawPacket.NativeDrawCall nativeDrawCall) {
+        if (isSolidOpaque(packet)) {
+            return ReplayPassClassification.nativeSupported(ReplayPass.SOLID_OPAQUE,
+                "solid opaque render flags");
+        }
+        if (isBoundedLineReplayTarget(packet, nativeDrawCall)) {
+            return ReplayPassClassification.nativeSupported(ReplayPass.BOUNDED_LINES,
+                "item-entity LINES target with POSITION_COLOR_NORMAL_LINE_WIDTH");
+        }
+        if (isBoundedNonOpaqueEntityReplayTarget(nativeDrawCall)) {
+            return ReplayPassClassification.nativeSupported(nonOpaquePass(packet),
+                "known non-opaque ENTITY target with packet-local blend/depth/cull state");
+        }
+
+        RenderPassDrawPacket.RenderFlags flags = packet == null ? null : packet.flags();
+        if (flags == null || !flags.metadataAvailable()) {
+            return ReplayPassClassification.unsupported("render flags metadata unavailable");
+        }
+        if (!flags.blending() && !flags.sortOnUpload() && !flags.outline()) {
+            return ReplayPassClassification.unsupported(
+                "packet is not solid opaque, bounded lines, or a captured non-opaque render pass");
+        }
+
+        RenderPassDrawPacket.PipelineBinding pipeline = packet.pipeline();
+        List<String> missing = missingNonOpaqueRequirements(pipeline);
+        ReplayPass pass = nonOpaquePass(packet);
+        if (!missing.isEmpty()) {
+            return ReplayPassClassification.missing(pass, String.join(", ", missing));
+        }
+
+        return ReplayPassClassification.nonOpaque(pass,
+            "renderType=" + renderTypeName(packet)
+                + ", pipeline=" + pipelineLocation(packet)
+                + ", vertexShader=" + pipeline.vertexShader()
+                + ", fragmentShader=" + pipeline.fragmentShader()
+                + ", cull=" + pipeline.cull()
+                + ", depth=" + describeDepth(pipeline.depth())
+                + ", blend=" + describeBlend(pipeline.colorTargets()));
+    }
+
+    private static List<String> missingNonOpaqueRequirements(
+        RenderPassDrawPacket.PipelineBinding pipeline) {
+        ArrayList<String> missing = new ArrayList<>();
+        if (pipeline == null) {
+            missing.add("pipeline");
+            return missing;
+        }
+        if (pipeline.location() == null) {
+            missing.add("pipeline.location");
+        }
+        if (pipeline.vertexShader() == null) {
+            missing.add("pipeline.vertexShader");
+        }
+        if (pipeline.fragmentShader() == null) {
+            missing.add("pipeline.fragmentShader");
+        }
+        if (pipeline.depth() == null) {
+            missing.add("pipeline.depth");
+        }
+        if (pipeline.colorTargets() == null || pipeline.colorTargets().isEmpty()) {
+            missing.add("pipeline.colorTargets");
+        } else if (pipeline.colorTargets().stream()
+            .anyMatch(target -> target == null || target.blend() == null)) {
+            missing.add("pipeline.colorTargets.blend");
+        }
+        return missing;
+    }
+
+    private static ReplayPass nonOpaquePass(RenderPassDrawPacket packet) {
+        String renderType = renderTypeName(packet);
+        String pipeline = String.valueOf(pipelineLocation(packet));
+        if ("eyes".equals(renderType) || pipeline.contains("eyes")) {
+            return ReplayPass.EYES;
+        }
+        if ((renderType != null && renderType.startsWith("entity_translucent"))
+            || pipeline.contains("entity_translucent")) {
+            return ReplayPass.ENTITY_TRANSLUCENT;
+        }
+        return ReplayPass.RELATED_NON_OPAQUE;
+    }
+
+    private static String describeDepth(
+        com.radiance.client.renderpass.RenderPassPipelineState.DepthState depth) {
+        if (depth == null) {
+            return "<missing>";
+        }
+        return "{test=" + depth.depthTest() + ", write=" + depth.writeDepth()
+            + ", biasScale=" + depth.depthBiasScaleFactor()
+            + ", biasConstant=" + depth.depthBiasConstant() + "}";
+    }
+
+    private static String describeBlend(
+        List<com.radiance.client.renderpass.RenderPassPipelineState.ColorTargetStateSnapshot> targets) {
+        if (targets == null || targets.isEmpty()) {
+            return "<missing>";
+        }
+        return targets.stream()
+            .map(target -> "target" + target.index() + "{enabled="
+                + (target.blend() != null && target.blend().enabled())
+                + ", color=" + describeBlendEquation(target.blend() == null
+                    ? null : target.blend().color())
+                + ", alpha=" + describeBlendEquation(target.blend() == null
+                    ? null : target.blend().alpha())
+                + ", writeMask=" + target.writeMask() + "}")
+            .toList()
+            .toString();
+    }
+
+    private static String describeBlendEquation(
+        com.radiance.client.renderpass.RenderPassPipelineState.BlendEquationState equation) {
+        if (equation == null) {
+            return "<none>";
+        }
+        return equation.sourceFactor() + "/" + equation.destFactor() + "/" + equation.op();
     }
 
     private static boolean isSupportedDrawMode(RenderPassDrawPacket.NativeDrawCall nativeDrawCall) {
@@ -256,6 +464,46 @@ final class RenderPassNativeReplayHandler {
         RenderPassDrawPacket.FallbackReason reason, String field, String message,
         boolean retryable) {
         return RenderPassDrawPacket.FallbackDetail.of(reason, field, message, retryable);
+    }
+
+    private enum ReplayPass {
+        SOLID_OPAQUE("solid_opaque"),
+        BOUNDED_LINES("bounded_lines"),
+        EYES("eyes"),
+        ENTITY_TRANSLUCENT("entity_translucent"),
+        RELATED_NON_OPAQUE("related_non_opaque");
+
+        private final String logName;
+
+        ReplayPass(String logName) {
+            this.logName = logName;
+        }
+
+        String logName() {
+            return logName;
+        }
+    }
+
+    private record ReplayPassClassification(ReplayPass pass, boolean requirementsAvailable,
+                                            boolean nativeSupported, boolean nonOpaque,
+                                            String detail) {
+
+        private static ReplayPassClassification nativeSupported(ReplayPass pass, String detail) {
+            return new ReplayPassClassification(pass, true, true, false, detail);
+        }
+
+        private static ReplayPassClassification unsupported(String detail) {
+            return new ReplayPassClassification(ReplayPass.RELATED_NON_OPAQUE, true, false,
+                false, detail);
+        }
+
+        private static ReplayPassClassification missing(ReplayPass pass, String detail) {
+            return new ReplayPassClassification(pass, false, false, true, detail);
+        }
+
+        private static ReplayPassClassification nonOpaque(ReplayPass pass, String detail) {
+            return new ReplayPassClassification(pass, true, false, true, detail);
+        }
     }
 
     private static List<String> fields(List<RenderPassDrawPacket.FallbackDetail> details) {

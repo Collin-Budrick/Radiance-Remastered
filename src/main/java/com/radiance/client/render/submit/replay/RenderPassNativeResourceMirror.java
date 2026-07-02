@@ -26,6 +26,13 @@ public final class RenderPassNativeResourceMirror {
         return bufferReference(BufferProxy.resolveNativeBufferMirror(buffer));
     }
 
+    public static MirroredGpuBuffer captureMirroredBuffer(GpuBuffer buffer) {
+        if (buffer == null) {
+            return MirroredGpuBuffer.missing();
+        }
+        return MirroredGpuBuffer.from(BufferProxy.resolveNativeBufferMirror(buffer));
+    }
+
     public static RenderPassDrawPacket.NativeBufferReference rememberBuffer(GpuBuffer buffer,
         int nativeId) {
         return rememberBuffer(buffer, nativeId, 0L, "registered-buffer");
@@ -64,6 +71,10 @@ public final class RenderPassNativeResourceMirror {
             mirror.nativeSerial(), mirror.hasNativeSerial(), mirror.source());
     }
 
+    public static RenderPipelineMirror captureRenderPipelineMirror(RenderPipeline pipeline) {
+        return RenderPipelineMirror.from(capturePipeline(pipeline));
+    }
+
     public static RenderPassDrawPacket.NativePipelineReference rememberPipeline(
         RenderPipeline pipeline, int nativePipelineId, long nativeSerial, String source) {
         if (pipeline == null) {
@@ -76,6 +87,12 @@ public final class RenderPassNativeResourceMirror {
             System.identityHashCode(pipeline), updated.nativePipelineId(),
             updated.hasNativePipelineId(), updated.shaderId(), updated.hasShaderId(),
             updated.nativeSerial(), updated.hasNativeSerial(), updated.source());
+    }
+
+    public static RenderPipelineMirror rememberRenderPipelineMirror(RenderPipeline pipeline,
+        int nativePipelineId, long nativeSerial, String source) {
+        return RenderPipelineMirror.from(rememberPipeline(pipeline, nativePipelineId,
+            nativeSerial, source));
     }
 
     public static RenderPassDrawPacket.NativePipelineReference rememberPipelineShader(
@@ -122,6 +139,10 @@ public final class RenderPassNativeResourceMirror {
             mirror.hasNativeSerial(), mirror.source());
     }
 
+    public static UniformStateSnapshot captureUniformStateSnapshot(Object owner, String name) {
+        return UniformStateSnapshot.from(captureUniform(owner, name));
+    }
+
     public static RenderPassDrawPacket.NativeUniformReference rememberUniform(Object owner,
         String name, long uniformPtr, int uniformSize, String source) {
         if (owner == null) {
@@ -137,6 +158,12 @@ public final class RenderPassNativeResourceMirror {
             updated.uniformSize(), updated.hasUniformPtr(), updated.hasUniformSize(),
             updated.nativeBinding(), updated.hasNativeBinding(), updated.nativeSerial(),
             updated.hasNativeSerial(), updated.source());
+    }
+
+    public static UniformStateSnapshot rememberUniformStateSnapshot(Object owner, String name,
+        long uniformPtr, int uniformSize, String source) {
+        return UniformStateSnapshot.from(rememberUniform(owner, name, uniformPtr, uniformSize,
+            source));
     }
 
     public static RenderPassDrawPacket.NativeUniformReference rememberUniformBinding(Object owner,

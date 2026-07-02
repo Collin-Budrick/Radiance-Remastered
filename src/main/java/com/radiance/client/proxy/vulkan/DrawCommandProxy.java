@@ -43,6 +43,7 @@ public class DrawCommandProxy {
 
         public static final int TARGET_SOLID_OPAQUE = 0;
         public static final int TARGET_ITEM_ENTITY = 1;
+        public static final int TARGET_NON_OPAQUE_ENTITY = 2;
 
         public static final int FLAG_SOLID = 1;
         public static final int FLAG_OPAQUE = 1 << 1;
@@ -52,6 +53,7 @@ public class DrawCommandProxy {
         public static final int DRAW_MODE_TRIANGLES = 4;
         public static final int DRAW_MODE_QUADS = 7;
 
+        public static final int VERTEX_FORMAT_ENTITY = 1;
         public static final int VERTEX_FORMAT_POSITION_COLOR_NORMAL_LINE_WIDTH = 5;
         public static final int VERTEX_FORMAT_POSITION_COLOR_LINE_WIDTH =
             VERTEX_FORMAT_POSITION_COLOR_NORMAL_LINE_WIDTH;
@@ -64,6 +66,9 @@ public class DrawCommandProxy {
         public static final int STATUS_DROPPED_UNSUPPORTED = -1;
         public static final int STATUS_DROPPED_INVALID = -2;
         public static final int STATUS_DROPPED_NATIVE_ERROR = -3;
+        public static final int STATUS_REPLAYED_NATIVE = STATUS_REPLAYED;
+        public static final int STATUS_FALLBACK_UNSUPPORTED = STATUS_DROPPED_UNSUPPORTED;
+        public static final int STATUS_FALLBACK_INVALIDATED = STATUS_DROPPED_INVALID;
 
         private RenderPass() {
         }
@@ -73,6 +78,11 @@ public class DrawCommandProxy {
             int scissorHeight, int vertexBufferId, int indexBufferId, int shaderId,
             int vertexFormatType, int drawMode, int indexType, int indexCount,
             int firstIndex, int vertexOffset, int firstInstance, int instanceCount,
+            boolean blendEnabled, int srcColorBlendFactor, int srcAlphaBlendFactor,
+            int dstColorBlendFactor, int dstAlphaBlendFactor, int colorBlendOp,
+            int alphaBlendOp, int colorWriteMask, boolean depthTestEnabled,
+            boolean depthWriteEnabled, int depthCompareOp, boolean depthBiasEnabled,
+            float depthBiasSlopeFactor, float depthBiasConstantFactor, int cullMode,
             long uniformPtr, int uniformSize, long vertexPayloadPtr, int vertexPayloadSize,
             long indexPayloadPtr, int indexPayloadSize);
 
@@ -88,6 +98,11 @@ public class DrawCommandProxy {
                     packet.vertexBufferId(), packet.indexBufferId(), packet.shaderId(),
                     packet.vertexFormatType(), packet.drawMode(), packet.indexType(), packet.indexCount(),
                     packet.firstIndex(), packet.vertexOffset(), packet.firstInstance(), packet.instanceCount(),
+                    packet.blendEnabled(), packet.srcColorBlendFactor(), packet.srcAlphaBlendFactor(),
+                    packet.dstColorBlendFactor(), packet.dstAlphaBlendFactor(), packet.colorBlendOp(),
+                    packet.alphaBlendOp(), packet.colorWriteMask(), packet.depthTestEnabled(),
+                    packet.depthWriteEnabled(), packet.depthCompareOp(), packet.depthBiasEnabled(),
+                    packet.depthBiasSlopeFactor(), packet.depthBiasConstantFactor(), packet.cullMode(),
                     packet.uniformPtr(), packet.uniformSize(),
                     payloadAddress(packet.vertexPayload()), payloadSize(packet.vertexPayload()),
                     payloadAddress(packet.indexPayload()), payloadSize(packet.indexPayload()));
@@ -175,6 +190,10 @@ public class DrawCommandProxy {
             if (packet.target() == TARGET_SOLID_OPAQUE) {
                 return isSupportedSolidOpaqueFlags(packet.flags());
             }
+            if (packet.target() == TARGET_NON_OPAQUE_ENTITY) {
+                return packet.flags() == FLAG_INDEXED
+                    && packet.vertexFormatType() == VERTEX_FORMAT_ENTITY;
+            }
             return packet.target() == TARGET_ITEM_ENTITY
                 && packet.flags() == lineFlags()
                 && packet.drawMode() == DRAW_MODE_LINES
@@ -190,6 +209,10 @@ public class DrawCommandProxy {
             int target) {
             if (vertexFormatType == VERTEX_FORMAT_POSITION_COLOR_NORMAL_LINE_WIDTH) {
                 return target == TARGET_ITEM_ENTITY && drawMode == DRAW_MODE_LINES;
+            }
+            if (vertexFormatType == VERTEX_FORMAT_ENTITY) {
+                return (target == TARGET_SOLID_OPAQUE || target == TARGET_NON_OPAQUE_ENTITY)
+                    && (drawMode == DRAW_MODE_TRIANGLES || drawMode == DRAW_MODE_QUADS);
             }
             return target == TARGET_SOLID_OPAQUE
                 && (drawMode == DRAW_MODE_TRIANGLES || drawMode == DRAW_MODE_QUADS);
@@ -216,8 +239,11 @@ public class DrawCommandProxy {
         /*
          * Stable packet fields expected from Java capture:
          * target: TARGET_SOLID_OPAQUE for solid terrain/entity subsets, or
-         * TARGET_ITEM_ENTITY for bounded minecraft:pipeline/lines replay.
+         * TARGET_ITEM_ENTITY for descriptor-correct indexed line replay, or
+         * TARGET_NON_OPAQUE_ENTITY for bounded entity translucent/eyes replay.
          * scissor: captured 26.2 PreparedRenderType scissor state, applied before replay.
+         * render state: captured packet-local blend/depth/raster/scissor state, applied before
+         * every native draw to prevent dynamic-state leakage between accepted packets.
          * buffer/shader ids: ids allocated through BufferProxy and ShaderProxy.
          * drawMode/indexType: BufferProxy primitive/index integer mappings.
          * uniformPtr/uniformSize: direct native memory valid for the duration of the call.
@@ -226,7 +252,12 @@ public class DrawCommandProxy {
             int scissorX, int scissorY, int scissorWidth, int scissorHeight,
             int vertexBufferId, int indexBufferId, int shaderId, int vertexFormatType,
             int drawMode, int indexType, int indexCount, int firstIndex, int vertexOffset,
-            int firstInstance, int instanceCount, long uniformPtr, int uniformSize,
+            int firstInstance, int instanceCount, boolean blendEnabled,
+            int srcColorBlendFactor, int srcAlphaBlendFactor, int dstColorBlendFactor,
+            int dstAlphaBlendFactor, int colorBlendOp, int alphaBlendOp, int colorWriteMask,
+            boolean depthTestEnabled, boolean depthWriteEnabled, int depthCompareOp,
+            boolean depthBiasEnabled, float depthBiasSlopeFactor, float depthBiasConstantFactor,
+            int cullMode, long uniformPtr, int uniformSize,
             ByteBuffer vertexPayload, ByteBuffer indexPayload) {
 
         }

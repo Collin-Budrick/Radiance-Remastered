@@ -116,7 +116,9 @@ public abstract class CloudRendererMixins {
             this.texture.height(), cellX, cellZ, radiusCells, this.quadCount,
             cloudBaseRelativeY, cloudTopRelativeY, cellOffsetX, cellOffsetZ, cameraPosition.x,
             cameraPosition.y, cameraPosition.z, bottomY, gameTime, partialTicks,
-            this.radiance$encodedCloudFaces.duplicate(), this.radiance$encodedCloudFaceBytes);
+            this.radiance$encodedCloudFaces.duplicate(), this.radiance$encodedCloudFaceBytes,
+            CloudProxy.normalizeEncodedFaces(this.radiance$encodedCloudFaces,
+                this.radiance$encodedCloudFaceBytes, radiusCells));
     }
 
     @Unique

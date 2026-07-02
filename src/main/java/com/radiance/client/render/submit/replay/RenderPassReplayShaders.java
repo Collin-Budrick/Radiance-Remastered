@@ -1,5 +1,7 @@
 package com.radiance.client.render.submit.replay;
 
+import com.mojang.blaze3d.PrimitiveTopology;
+import com.mojang.blaze3d.platform.Window;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.radiance.client.RadianceClient;
@@ -9,6 +11,7 @@ import com.radiance.client.proxy.vulkan.BufferProxy;
 import com.radiance.client.proxy.vulkan.DrawCommandProxy;
 import com.radiance.client.proxy.vulkan.ShaderProxy;
 import com.radiance.client.proxy.vulkan.TextureProxy;
+import com.radiance.client.state.RenderSystemStateBridge;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -21,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
 import org.lwjgl.system.MemoryUtil;
 
@@ -35,11 +39,10 @@ final class RenderPassReplayShaders {
     private static final int MAT4_BYTES = 64;
     private static final int DYNAMIC_TRANSFORMS_BYTES = 160;
     private static final int GLOBALS_BYTES = 64;
+    private static final int GLOBALS_SCREEN_SIZE_OFFSET = 32;
     private static final int ENTITY_UNIFORM_SIZE = 240;
     private static final int LINE_UNIFORM_SIZE = MAT4_BYTES + DYNAMIC_TRANSFORMS_BYTES
         + GLOBALS_BYTES;
-    private static final Identifier LINES_PIPELINE =
-        Identifier.fromNamespaceAndPath("minecraft", "pipeline/lines");
     private static final Identifier ENTITY_CUTOUT_PIPELINE =
         Identifier.fromNamespaceAndPath("minecraft", "pipeline/entity_cutout");
     private static final Identifier ENTITY_CUTOUT_CULL_PIPELINE =
@@ -48,11 +51,16 @@ final class RenderPassReplayShaders {
         Identifier.fromNamespaceAndPath("minecraft", "pipeline/armor_cutout_no_cull");
     private static final Identifier ITEM_CUTOUT_PIPELINE =
         Identifier.fromNamespaceAndPath("minecraft", "pipeline/item_cutout");
+    private static final Identifier EYES_PIPELINE =
+        Identifier.fromNamespaceAndPath("minecraft", "pipeline/eyes");
+    private static final Identifier ENTITY_TRANSLUCENT_PIPELINE =
+        Identifier.fromNamespaceAndPath("minecraft", "pipeline/entity_translucent");
 
     private static final Map<RenderPipeline, UniformPayload> UNIFORM_PAYLOADS =
         Collections.synchronizedMap(new WeakHashMap<>());
     private static final AtomicBoolean LOGGED_SHADER = new AtomicBoolean();
     private static final AtomicBoolean LOGGED_FAILURE = new AtomicBoolean();
+    private static final AtomicBoolean LOGGED_LINE_GLOBALS_SYNTHESIS = new AtomicBoolean();
 
     private RenderPassReplayShaders() {
     }
@@ -232,8 +240,10 @@ final class RenderPassReplayShaders {
             return List.of(detail(
                 RenderPassDrawPacket.FallbackReason.UNSUPPORTED_NATIVE_DRAW_PACKET,
                 "pipeline.location",
-                "line replay is bounded to minecraft:pipeline/lines, captured pipeline="
-                    + pipelineLocation(pipeline),
+                "line replay requires PrimitiveTopology.LINES with "
+                    + "POSITION_COLOR_NORMAL_LINE_WIDTH, captured pipeline="
+                    + pipelineLocation(pipeline) + ", topology=" + primitiveTopology(pipeline)
+                    + ", formats=" + vertexFormats(pipeline),
                 false));
         }
         if (nativeDrawCall.hasShaderId() && nativeDrawCall.hasUniformPayload()
@@ -471,16 +481,20 @@ final class RenderPassReplayShaders {
         return ENTITY_CUTOUT_PIPELINE.equals(location)
             || ENTITY_CUTOUT_CULL_PIPELINE.equals(location)
             || ARMOR_CUTOUT_NO_CULL_PIPELINE.equals(location)
-            || ITEM_CUTOUT_PIPELINE.equals(location);
+            || ITEM_CUTOUT_PIPELINE.equals(location)
+            || EYES_PIPELINE.equals(location)
+            || ENTITY_TRANSLUCENT_PIPELINE.equals(location);
     }
 
     private static boolean isSupportedLineReplayPipeline(RenderPipeline pipeline) {
-        return pipeline != null && LINES_PIPELINE.equals(pipeline.getLocation());
+        return pipeline != null && pipeline.getPrimitiveTopology() == PrimitiveTopology.LINES;
     }
 
     private static boolean isSupportedLineReplayPipeline(
         RenderPassDrawPacket.PipelineBinding pipeline) {
-        return pipeline != null && LINES_PIPELINE.equals(pipeline.location());
+        return pipeline != null
+            && pipeline.primitiveTopology() == PrimitiveTopology.LINES
+            && vertexFormatType(pipeline) == VERTEX_FORMAT_POSITION_COLOR_NORMAL_LINE_WIDTH;
     }
 
     private static boolean isSupportedDrawMode(int drawMode, int vertexFormatType) {
@@ -501,6 +515,12 @@ final class RenderPassReplayShaders {
         return pipeline == null || pipeline.location() == null
             ? "<missing>"
             : pipeline.location().toString();
+    }
+
+    private static String primitiveTopology(RenderPassDrawPacket.PipelineBinding pipeline) {
+        return pipeline == null || pipeline.primitiveTopology() == null
+            ? "<missing>"
+            : pipeline.primitiveTopology().toString();
     }
 
     private static String displayVertexFormat(int vertexFormatType) {
@@ -711,7 +731,7 @@ final class RenderPassReplayShaders {
     private static byte[] copyGlobalSettings(
         List<RenderPassDrawPacket.UniformBinding> uniforms) {
         if (uniforms == null) {
-            return null;
+            return copyGlobalSettingsFromState();
         }
         RenderPassDrawPacket.UniformBinding globals = uniforms
             .stream()
@@ -719,9 +739,57 @@ final class RenderPassReplayShaders {
             .findFirst()
             .orElse(null);
         if (globals == null || globals.buffer() == null || globals.buffer().buffer() == null) {
+            return copyGlobalSettingsFromState();
+        }
+        byte[] mirrored = BufferProxy.copyMirroredBufferRange(globals.buffer().buffer(), 0,
+            GLOBALS_BYTES);
+        if (mirrored != null && mirrored.length > 0) {
+            return mirrored;
+        }
+        return copyGlobalSettingsFromState();
+    }
+
+    private static byte[] copyGlobalSettingsFromState() {
+        var defaults = RenderSystemStateBridge.defaultUniformBindings();
+        if (defaults != null) {
+            byte[] mirrored = copyGlobalSettings(defaults.globals());
+            if (mirrored != null) {
+                return mirrored;
+            }
+        }
+        byte[] mirrored = copyGlobalSettings(RenderSystemStateBridge.globalSettingsUniform());
+        return mirrored == null ? synthesizeLineGlobalsFromWindow() : mirrored;
+    }
+
+    private static byte[] copyGlobalSettings(com.mojang.blaze3d.buffers.GpuBuffer globals) {
+        if (globals == null) {
             return null;
         }
-        return BufferProxy.copyMirroredBufferRange(globals.buffer().buffer(), 0, GLOBALS_BYTES);
+        byte[] mirrored = BufferProxy.copyMirroredBufferRange(globals, 0, GLOBALS_BYTES);
+        return mirrored == null || mirrored.length == 0 ? null : mirrored;
+    }
+
+    private static byte[] synthesizeLineGlobalsFromWindow() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null) {
+            return null;
+        }
+        Window window = minecraft.getWindow();
+        if (window == null || window.getWidth() <= 0 || window.getHeight() <= 0) {
+            return null;
+        }
+
+        byte[] globals = new byte[GLOBALS_BYTES];
+        ByteBuffer.wrap(globals)
+            .order(ByteOrder.nativeOrder())
+            .putFloat(GLOBALS_SCREEN_SIZE_OFFSET, window.getWidth())
+            .putFloat(GLOBALS_SCREEN_SIZE_OFFSET + Float.BYTES, window.getHeight());
+        if (LOGGED_LINE_GLOBALS_SYNTHESIS.compareAndSet(false, true)) {
+            RadianceClient.LOGGER.info(
+                "Radiance line replay proof: synthesized Globals ScreenSize fallback width={} height={} uniformSize={}",
+                window.getWidth(), window.getHeight(), GLOBALS_BYTES);
+        }
+        return globals;
     }
 
     private static final String COLOR_VERTEX_SHADER = """
